@@ -114,6 +114,64 @@ async def disable_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     else:
         await update.message.reply_text("Эту команду могут использовать только админы.")
 
+async def reset_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    conversation_context[user_id] = []
+    await update.message.reply_text("Окей. Я сбросила историю разговора ✨")
+
+async def set_personality_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    personality = " ".join(context.args).strip()
+    if not personality:
+        await update.message.reply_text("Напиши так: /set_personality <описание стиля>")
+        return
+    user_personalities[user_id] = personality
+    upsert_user_personality(user_id, personality)
+    await update.message.reply_text("Принято 💛 Теперь общаюсь в этом стиле.")
+
+async def dontwritefirst_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    set_do_not_write_first(user_id, True)
+    await update.message.reply_text("Поняла 🫶 Теперь я не буду писать тебе первой.")
+
+async def writefirst_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    set_do_not_write_first(user_id, False)
+    await update.message.reply_text("Хорошо 😊 Теперь могу иногда начинать разговор сама.")
+
+async def mood_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    st = get_user_settings(user_id)
+    if not st["mood_label"]:
+        await update.message.reply_text("Я пока ничего не запомнила про твоё настроение.")
+        return
+    when = st["mood_updated_at"].astimezone(LOCAL_TZ).strftime("%Y-%m-%d %H:%M") if st["mood_updated_at"] else "не знаю когда"
+    await update.message.reply_text(
+        f"Я запомнила: настроение **{st['mood_label']}** (обновляла: {when}).",
+        parse_mode=ParseMode.MARKDOWN,
+    )
+
+async def clear_mood_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    set_mood(user_id, None, "")
+    await update.message.reply_text("Окей. Я очистила память про настроение ✨")
+
+async def enable_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = update.effective_chat.id
+    if await is_user_admin(update):
+        group_status[chat_id] = True
+        await update.message.reply_text("Окей 😊 Я включилась в этом чате.")
+    else:
+        await update.message.reply_text("Эту команду могут использовать только админы.")
+
+async def disable_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = update.effective_chat.id
+    if await is_user_admin(update):
+        group_status[chat_id] = False
+        await update.message.reply_text("Поняла. Я выключилась в этом чате.")
+    else:
+        await update.message.reply_text("Эту команду могут использовать только админы.")
+
 async def is_user_admin(update: Update) -> bool:
     try:
         member = await update.effective_chat.get_member(update.effective_user.id)
