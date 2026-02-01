@@ -667,7 +667,7 @@ async def ask_chatgpt(messages) -> str:
             client.chat.completions.create(
                 model="gpt-5-nano",
                 messages=messages,
-                max_tokens=450,
+                # max_tokens=450,
                 n=1,
             ),
             timeout=120,
