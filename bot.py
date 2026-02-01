@@ -665,7 +665,7 @@ async def ask_chatgpt(messages) -> str:
     try:
         response = await asyncio.wait_for(
             client.chat.completions.create(
-                model="o1-mini",
+                model="gpt-5-nano",
                 messages=messages,
                 max_tokens=450,
                 n=1,
