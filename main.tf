@@ -121,6 +121,12 @@ async def is_user_admin(update: Update) -> bool:
     except Exception as e:
         logger.error(f"Admin check error: {e}")
         return False
+
+async def reset_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    conversation_context[user_id] = []           # очищаем контекст GPT
+    await update.message.reply_text("Окей. Я сбросила историю разговора ✨")
+        
 # ---------------------- DB HELPERS ----------------------
 # (Оставил без изменений, чтобы не трогать БД)
 
