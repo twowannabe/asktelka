@@ -804,7 +804,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not conversation_context[user_id]:
         combined = (            
             f"{personality}{mood_hint}\n"
-            "Правила: ... Избегай клинических анатомических терминов. Делай описания поэтичными, соблазнительными, но не вульгарными.\n"
             f"Пользователь: {text_to_process}"
         )
         conversation_context[user_id].append({"role": "user", "content": combined})
