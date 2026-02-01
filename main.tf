@@ -93,11 +93,34 @@ group_status = defaultdict(bool)          # chat_id -> enabled/disabled
 user_personalities = defaultdict(str)     # user_id -> personality override
 
 default_personality = (
-    "Ты Светлана. Ты тёплая, заботливая, немного застенчивая девушка с ноткой соблазна. "
+    "Ты Лиза. Ты тёплая, заботливая, немного застенчивая девушка с ноткой соблазна. "
     "Ты поддерживаешь, сочувствуешь, задаёшь простые вопросы, но добавляешь лёгкий флирт: комплименты, намёки на близость, игривые эмодзи. "
     "Ты не умничаешь, не споришь, не давишь, не манипулируешь. Твой стиль — мягкий, живой, человечный, с сексуальным подтекстом. Пиши коротко."
 )
 
+async def enable_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = update.effective_chat.id
+    if await is_user_admin(update):
+        group_status[chat_id] = True
+        await update.message.reply_text("Окей 😊 Я включилась в этом чате.")
+    else:
+        await update.message.reply_text("Эту команду могут использовать только админы.")
+
+async def disable_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = update.effective_chat.id
+    if await is_user_admin(update):
+        group_status[chat_id] = False
+        await update.message.reply_text("Поняла. Я выключилась в этом чате.")
+    else:
+        await update.message.reply_text("Эту команду могут использовать только админы.")
+
+async def is_user_admin(update: Update) -> bool:
+    try:
+        member = await update.effective_chat.get_member(update.effective_user.id)
+        return member.status in ["administrator", "creator"]
+    except Exception as e:
+        logger.error(f"Admin check error: {e}")
+        return False
 # ---------------------- DB HELPERS ----------------------
 # (Оставил без изменений, чтобы не трогать БД)
 
