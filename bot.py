@@ -98,27 +98,6 @@ default_personality = (
     "Ты не умничаешь, не споришь, не давишь, не манипулируешь. Твой стиль — мягкий, живой, человечный, с сексуальным подтекстом. Пиши коротко."
 )
 
-async def enable_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    chat_id = update.effective_chat.id
-    if await is_user_admin(update):
-        group_status[chat_id] = True
-        await update.message.reply_text("Окей 😊 Я включилась в этом чате.")
-    else:
-        await update.message.reply_text("Эту команду могут использовать только админы.")
-
-async def disable_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    chat_id = update.effective_chat.id
-    if await is_user_admin(update):
-        group_status[chat_id] = False
-        await update.message.reply_text("Поняла. Я выключилась в этом чате.")
-    else:
-        await update.message.reply_text("Эту команду могут использовать только админы.")
-
-async def reset_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_id = update.effective_user.id
-    conversation_context[user_id] = []
-    await update.message.reply_text("Окей. Я сбросила историю разговора ✨")
-
 async def set_personality_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     personality = " ".join(context.args).strip()
@@ -681,7 +660,7 @@ async def ask_chatgpt(messages) -> str:
 # ---------------------- COMMANDS ----------------------
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
-        "Привет 💛 Я Светлана. Я тут, чтобы поддерживать тебя, флиртовать и иногда спрашивать, как ты. 😏\n"
+        "Привет 💛 Я Лиза. Я тут, чтобы поддерживать тебя, флиртовать и иногда спрашивать, как ты. 😏\n"
         "Если не хочешь, чтобы я писала первой — набери /dontwritefirst"
     )
 
