@@ -63,6 +63,10 @@ CHEAP_REACTION_CHANCE = 1 / 12
 
 # How often to scan for "lonely users"
 CHECK_LONELY_INTERVAL_SEC = 60 * 60 * 3  # every 3 hours
+
+# Dumb mode: shorter, simpler replies
+DUMB_MODE = True
+MAX_WORDS = 15
 # Consider "not talked today" if last_interaction is before local-day start
 # (We implement day start logic directly, not a fixed hour interval)
 
@@ -635,26 +639,63 @@ def cheap_intent(text: str) -> str:
     return "fallback"
 
 # ---------------------- OPENAI ----------------------
-async def ask_chatgpt(messages) -> str:
+async def ask_chatgpt(messages, user_name: str = "", dumb_mode: bool = DUMB_MODE) -> str:
     """
-    openai>=1.x style
+    GPT call with optional dumb mode.
+    Hard word limit enforced.
     """
+
     try:
+        name_part = f" Пользователя зовут {user_name}. Обращайся по имени." if user_name else ""
+
+        # System prompt injection (only once)
+        if dumb_mode:
+            system_prompt = (
+                "Ты Лиза. "
+                "Ты немного глуповатая, наивная и милая девушка. "
+                "Отвечай максимум 10 словами. "
+                "Используй очень простые слова. "
+                "Без умных объяснений. "
+                "Без длинных предложений. "
+                "Можно говорить 'эээ', 'ну', 'ммм'. "
+                "Иногда путай мысли. "
+                "Всегда коротко."
+                f"{name_part}"
+            )
+        else:
+            system_prompt = f"{default_personality}{name_part}"
+
+        # Ensure system role exists at top
+        if not messages or messages[0]["role"] != "system":
+            messages = [{"role": "system", "content": system_prompt}] + messages
+
         response = await asyncio.wait_for(
             client.chat.completions.create(
                 model="gpt-5-nano",
                 messages=messages,
-                # max_tokens=450,
+                max_tokens=25 if dumb_mode else 200,
+                temperature=1.1 if dumb_mode else 0.9,
                 n=1,
             ),
-            timeout=120,
+            timeout=60,
         )
+
         reply = (response.choices[0].message.content or "").strip()
+
+        if not reply:
+            return "эээ… я задумалась 😅"
+
+        # HARD WORD LIMIT
+        if dumb_mode:
+            words = reply.split()
+            reply = " ".join(words[:MAX_WORDS])
+
         return reply
+
     except Exception as e:
         logger.error(f"OpenAI error: {e}", exc_info=True)
-        return "Извини… я чуть зависла 😅 Дай мне минутку и напиши ещё раз."
-
+        return "эээ… я зависла 😳"
+    
 # ---------------------- COMMANDS ----------------------
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
@@ -774,33 +815,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not text_to_process:
         text_to_process = text
 
-    personality = user_personalities.get(user_id) or load_user_personality_from_db(user_id) or default_personality
-    # Include mood memory in prompt (softly), with flirty hint
-    st = get_user_settings(user_id)
-    mood_hint = ""
-    if st.get("mood_label"):
-        mood_hint = f"\n(Небольшая память: у пользователя недавно было настроение: {st['mood_label']}. Будь аккуратной, поддерживающей и добавь флирт, чтобы поднять настроение.)"
+    conversation_context[user_id].append({
+        "role": "user",
+        "content": text_to_process
+    })
 
-    name_hint = f"\nПользователя зовут {user_first_name}. Обращайся к нему по имени." if user_first_name else ""
-
-    # Keep short context: last 10 messages
-    if not conversation_context[user_id]:
-        combined = (
-            f"{personality}{name_hint}{mood_hint}\n"
-            f"Пользователь: {text_to_process}"
-        )
-        conversation_context[user_id].append({"role": "user", "content": combined})
-    else:
-        conversation_context[user_id].append({"role": "user", "content": text_to_process})
-
+    # Keep last 10 messages only
     conversation_context[user_id] = conversation_context[user_id][-10:]
-    messages = conversation_context[user_id]
 
-    reply = await ask_chatgpt(messages)
+    reply = await ask_chatgpt(conversation_context[user_id], user_name=user_first_name)
+
     if not reply.strip():
-        reply = "Я тут… 💛 Напиши ещё раз, ладно? 😏"
+        reply = "ммм… напиши ещё 😅"
 
-    conversation_context[user_id].append({"role": "assistant", "content": reply})
+    conversation_context[user_id].append({
+        "role": "assistant",
+        "content": reply
+    })
     conversation_context[user_id] = conversation_context[user_id][-10:]
 
     try:
