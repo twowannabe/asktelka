@@ -213,10 +213,10 @@ def init_db():
         )
         """)
 
-        # Migration: add first_name column if missing
-        cur.execute("""
-            ALTER TABLE user_last_contact ADD COLUMN IF NOT EXISTS first_name TEXT
-        """)
+        # Migrations
+        cur.execute("ALTER TABLE user_last_contact ADD COLUMN IF NOT EXISTS first_name TEXT")
+        cur.execute("ALTER TABLE user_last_contact ADD COLUMN IF NOT EXISTS username TEXT")
+        cur.execute("ALTER TABLE user_last_contact ADD COLUMN IF NOT EXISTS chat_type TEXT")
 
         cur.execute("""
         CREATE TABLE IF NOT EXISTS user_state (
@@ -288,18 +288,20 @@ def upsert_user_personality(user_id: int, personality: str):
     except Exception as e:
         logger.error(f"DB upsert personality error: {e}", exc_info=True)
 
-def update_last_interaction(user_id: int, chat_id: int, first_name: str = ""):
+def update_last_interaction(user_id: int, chat_id: int, first_name: str = "", username: str = "", chat_type: str = ""):
     try:
         conn = get_db_connection()
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO user_last_contact (user_id, chat_id, last_interaction, first_name)
-            VALUES (%s, %s, NOW(), %s)
+            INSERT INTO user_last_contact (user_id, chat_id, last_interaction, first_name, username, chat_type)
+            VALUES (%s, %s, NOW(), %s, %s, %s)
             ON CONFLICT (user_id) DO UPDATE SET
                 last_interaction = NOW(),
                 chat_id = EXCLUDED.chat_id,
-                first_name = EXCLUDED.first_name
-        """, (user_id, chat_id, first_name))
+                first_name = EXCLUDED.first_name,
+                username = EXCLUDED.username,
+                chat_type = EXCLUDED.chat_type
+        """, (user_id, chat_id, first_name, username, chat_type))
         conn.commit()
         cur.close()
         conn.close()
@@ -429,14 +431,14 @@ def set_mood(user_id: int, mood_label: str, mood_note: str):
     except Exception as e:
         logger.error(f"DB set mood error: {e}", exc_info=True)
 
-def get_last_contacts() -> list[tuple[int, int, datetime, str]]:
+def get_last_contacts() -> list[tuple]:
     """
-    Returns list of (user_id, chat_id, last_interaction, first_name)
+    Returns list of (user_id, chat_id, last_interaction, first_name, username, chat_type)
     """
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute("SELECT user_id, chat_id, last_interaction, COALESCE(first_name, '') FROM user_last_contact")
+        cur.execute("SELECT user_id, chat_id, last_interaction, COALESCE(first_name, ''), COALESCE(username, ''), COALESCE(chat_type, 'private') FROM user_last_contact")
         rows = cur.fetchall()
         cur.close()
         conn.close()
@@ -742,7 +744,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_first_name = user.first_name or user_username or ""
 
     # Update last interaction (so we don't check-in if they are active)
-    update_last_interaction(user_id, chat_id, user_first_name)
+    update_last_interaction(user_id, chat_id, user_first_name, user_username, chat.type)
     ensure_user_state_row(user_id)
 
     # Update mood memory on any message (cheap heuristic)
@@ -887,7 +889,7 @@ async def check_lonely_users(context: CallbackContext) -> None:
     today_start = start_of_local_day()
     today_str = local_date_str()
 
-    for (user_id, chat_id, last_interaction, first_name) in rows:
+    for (user_id, chat_id, last_interaction, first_name, username, chat_type) in rows:
         try:
             st = get_user_settings(int(user_id))
 
@@ -918,6 +920,10 @@ async def check_lonely_users(context: CallbackContext) -> None:
             # Generate a natural message via GPT
             mood_label = st.get("mood_label")
             text = await generate_checkin_text(first_name=first_name, mood_label=mood_label)
+
+            # In group chats, prepend @username so they get a notification
+            if chat_type != "private" and username:
+                text = f"@{username}, {text[0].lower()}{text[1:]}"
 
             await send_checkin_voice_or_text(context.bot, int(chat_id), text)
 
