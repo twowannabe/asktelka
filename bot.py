@@ -639,7 +639,7 @@ def cheap_intent(text: str) -> str:
     return "fallback"
 
 # ---------------------- OPENAI ----------------------
-async def ask_chatgpt(messages, user_name: str = "", dumb_mode: bool = DUMB_MODE) -> str:
+async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood_label: str = "", dumb_mode: bool = DUMB_MODE) -> str:
     """
     GPT call with optional dumb mode.
     Hard word limit enforced.
@@ -647,6 +647,7 @@ async def ask_chatgpt(messages, user_name: str = "", dumb_mode: bool = DUMB_MODE
 
     try:
         name_part = f" Пользователя зовут {user_name}. Обращайся по имени." if user_name else ""
+        mood_part = f" (У пользователя сейчас настроение: {mood_label}. Учти это мягко.)" if mood_label else ""
 
         # System prompt injection (only once)
         if dumb_mode:
@@ -660,10 +661,11 @@ async def ask_chatgpt(messages, user_name: str = "", dumb_mode: bool = DUMB_MODE
                 "Можно говорить 'эээ', 'ну', 'ммм'. "
                 "Иногда путай мысли. "
                 "Всегда коротко."
-                f"{name_part}"
+                f"{name_part}{mood_part}"
             )
         else:
-            system_prompt = f"{default_personality}{name_part}"
+            base = personality or default_personality
+            system_prompt = f"{base}{name_part}{mood_part}"
 
         # Ensure system role exists at top
         if not messages or messages[0]["role"] != "system":
@@ -673,7 +675,7 @@ async def ask_chatgpt(messages, user_name: str = "", dumb_mode: bool = DUMB_MODE
             client.chat.completions.create(
                 model="gpt-5-nano",
                 messages=messages,
-                max_tokens=25 if dumb_mode else 200,
+                max_completion_tokens=25 if dumb_mode else 200,
                 temperature=1.1 if dumb_mode else 0.9,
                 n=1,
             ),
@@ -815,6 +817,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not text_to_process:
         text_to_process = text
 
+    # Load user personality and mood for GPT context
+    personality = user_personalities.get(user_id) or load_user_personality_from_db(user_id) or ""
+    st = get_user_settings(user_id)
+    user_mood = st.get("mood_label") or ""
+
     conversation_context[user_id].append({
         "role": "user",
         "content": text_to_process
@@ -823,7 +830,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Keep last 10 messages only
     conversation_context[user_id] = conversation_context[user_id][-10:]
 
-    reply = await ask_chatgpt(conversation_context[user_id], user_name=user_first_name)
+    reply = await ask_chatgpt(
+        conversation_context[user_id],
+        user_name=user_first_name,
+        personality=personality,
+        mood_label=user_mood,
+    )
 
     if not reply.strip():
         reply = "ммм… напиши ещё 😅"
