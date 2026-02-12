@@ -657,7 +657,12 @@ async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood
     """
 
     try:
-        name_part = f" Пользователя зовут {user_name}. Обращайся по имени." if user_name else ""
+        name_part = (
+            f" Пользователя зовут {user_name}. "
+            f"Иногда используй его имя или ласкательную форму ({user_name}чка, {user_name}шка, малыш, солнышко, зай), "
+            f"но не в каждом сообщении — примерно в каждом третьем. "
+            f"Вставляй имя естественно в середину или конец предложения, не всегда в начало."
+        ) if user_name else ""
         mood_part = f" (У пользователя сейчас настроение: {mood_label}. Учти это мягко.)" if mood_label else ""
 
         # System prompt injection (only once)
