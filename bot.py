@@ -848,17 +848,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     conversation_context[user_id] = conversation_context[user_id][-10:]
 
     try:
-        # Safer: MarkdownV2 escape; fallback to plain if fails
-        escaped = escape_markdown_v2(reply)
-        if len(escaped) > 4096:
-            escaped = escaped[:4096]
-        await update.message.reply_text(
-            escaped,
-            parse_mode=ParseMode.MARKDOWN_V2,
-            reply_to_message_id=reply_to_message_id,
-        )
+        if chat.type == "private":
+            # In DM: send as a regular message, like a real person
+            await context.bot.send_message(chat_id=chat_id, text=reply)
+        else:
+            # In groups: reply to the specific message
+            escaped = escape_markdown_v2(reply)
+            if len(escaped) > 4096:
+                escaped = escaped[:4096]
+            await update.message.reply_text(
+                escaped,
+                parse_mode=ParseMode.MARKDOWN_V2,
+                reply_to_message_id=reply_to_message_id,
+            )
     except BadRequest:
-        await update.message.reply_text(reply, reply_to_message_id=reply_to_message_id)
+        await context.bot.send_message(chat_id=chat_id, text=reply)
     except Exception as e:
         logger.error(f"Telegram send error: {e}", exc_info=True)
 
