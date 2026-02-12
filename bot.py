@@ -141,19 +141,13 @@ async def clear_mood_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def enable_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.effective_chat.id
-    if await is_user_admin(update):
-        group_status[chat_id] = True
-        await update.message.reply_text("Окей 😊 Я включилась в этом чате.")
-    else:
-        await update.message.reply_text("Эту команду могут использовать только админы.")
+    group_status[chat_id] = True
+    await update.message.reply_text("Окей 😊 Я включилась в этом чате.")
 
 async def disable_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.effective_chat.id
-    if await is_user_admin(update):
-        group_status[chat_id] = False
-        await update.message.reply_text("Поняла. Я выключилась в этом чате.")
-    else:
-        await update.message.reply_text("Эту команду могут использовать только админы.")
+    group_status[chat_id] = False
+    await update.message.reply_text("Поняла. Я выключилась в этом чате.")
 
 async def is_user_admin(update: Update) -> bool:
     try:
