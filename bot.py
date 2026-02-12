@@ -93,7 +93,7 @@ logging.getLogger("telegram").setLevel(logging.WARNING)
 
 # ---------------------- RUNTIME STATE ----------------------
 conversation_context = defaultdict(list)   # user_id -> OpenAI messages
-group_status = defaultdict(bool)          # chat_id -> enabled/disabled
+disabled_chats = set()                   # chat_ids where bot is disabled
 user_personalities = defaultdict(str)     # user_id -> personality override
 
 default_personality = (
@@ -139,14 +139,18 @@ async def clear_mood_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     set_mood(user_id, None, "")
     await update.message.reply_text("Окей. Я очистила память про настроение ✨")
 
-async def enable_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    chat_id = update.effective_chat.id
-    group_status[chat_id] = True
-    await update.message.reply_text("Окей 😊 Я включилась в этом чате.")
-
 async def disable_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.effective_chat.id
-    group_status[chat_id] = False
+    disabled_chats.add(chat_id)
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("INSERT INTO disabled_chats (chat_id) VALUES (%s) ON CONFLICT DO NOTHING", (chat_id,))
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        logger.error(f"DB disable chat error: {e}", exc_info=True)
     await update.message.reply_text("Поняла. Я выключилась в этом чате.")
 
 async def is_user_admin(update: Update) -> bool:
@@ -213,10 +217,21 @@ def init_db():
         )
         """)
 
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS disabled_chats (
+            chat_id BIGINT PRIMARY KEY
+        )
+        """)
+
         # Migrations
         cur.execute("ALTER TABLE user_last_contact ADD COLUMN IF NOT EXISTS first_name TEXT")
         cur.execute("ALTER TABLE user_last_contact ADD COLUMN IF NOT EXISTS username TEXT")
         cur.execute("ALTER TABLE user_last_contact ADD COLUMN IF NOT EXISTS chat_type TEXT")
+
+        # Load disabled chats into memory
+        cur.execute("SELECT chat_id FROM disabled_chats")
+        for row in cur.fetchall():
+            disabled_chats.add(int(row[0]))
 
         cur.execute("""
         CREATE TABLE IF NOT EXISTS user_state (
@@ -453,7 +468,7 @@ def escape_markdown_v2(text: str) -> str:
     return re.sub(f"([{re.escape(escape_chars)}])", r"\\\1", text)
 
 def is_bot_enabled(chat_id: int) -> bool:
-    return group_status.get(chat_id, False)
+    return chat_id not in disabled_chats
 
 def local_now() -> datetime:
     return datetime.now(LOCAL_TZ)
@@ -708,8 +723,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Команды:\n"
         "/start — начать\n"
         "/help — помощь\n"
-        "/enable — включить бота в группе (админ)\n"
-        "/disable — выключить бота в группе (админ)\n"
+        "/disable — выключить бота в этом чате\n"
         "/reset — сбросить историю GPT\n"
         "/set_personality <текст> — задать стиль общения (с флиртом)\n"
         "/dontwritefirst — не писать первой (для тебя)\n"
@@ -958,7 +972,6 @@ def main():
 
     application.add_handler(CommandHandler("start", start_cmd))
     application.add_handler(CommandHandler("help", help_cmd))
-    application.add_handler(CommandHandler("enable", enable_cmd))
     application.add_handler(CommandHandler("disable", disable_cmd))
     application.add_handler(CommandHandler("reset", reset_cmd))
     application.add_handler(CommandHandler("set_personality", set_personality_cmd))
