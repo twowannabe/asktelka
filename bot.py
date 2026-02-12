@@ -675,13 +675,14 @@ async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood
             client.chat.completions.create(
                 model="gpt-5-nano",
                 messages=messages,
-                max_completion_tokens=25 if dumb_mode else 200,
+                max_completion_tokens=100 if dumb_mode else 200,
                 n=1,
             ),
             timeout=60,
         )
 
         reply = (response.choices[0].message.content or "").strip()
+        logger.info(f"GPT raw reply: {repr(reply)}")
 
         if not reply:
             return "эээ… я задумалась 😅"
