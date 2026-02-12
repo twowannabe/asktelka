@@ -676,7 +676,6 @@ async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood
                 model="gpt-5-nano",
                 messages=messages,
                 max_completion_tokens=25 if dumb_mode else 200,
-                temperature=1.1 if dumb_mode else 0.9,
                 n=1,
             ),
             timeout=60,
