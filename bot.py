@@ -210,8 +210,14 @@ def init_db():
         CREATE TABLE IF NOT EXISTS user_last_contact (
             user_id BIGINT PRIMARY KEY,
             chat_id BIGINT,
-            last_interaction TIMESTAMP
+            last_interaction TIMESTAMP,
+            first_name TEXT
         )
+        """)
+
+        # Migration: add first_name column if missing
+        cur.execute("""
+            ALTER TABLE user_last_contact ADD COLUMN IF NOT EXISTS first_name TEXT
         """)
 
         cur.execute("""
@@ -284,17 +290,18 @@ def upsert_user_personality(user_id: int, personality: str):
     except Exception as e:
         logger.error(f"DB upsert personality error: {e}", exc_info=True)
 
-def update_last_interaction(user_id: int, chat_id: int):
+def update_last_interaction(user_id: int, chat_id: int, first_name: str = ""):
     try:
         conn = get_db_connection()
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO user_last_contact (user_id, chat_id, last_interaction)
-            VALUES (%s, %s, NOW())
+            INSERT INTO user_last_contact (user_id, chat_id, last_interaction, first_name)
+            VALUES (%s, %s, NOW(), %s)
             ON CONFLICT (user_id) DO UPDATE SET
                 last_interaction = NOW(),
-                chat_id = EXCLUDED.chat_id
-        """, (user_id, chat_id))
+                chat_id = EXCLUDED.chat_id,
+                first_name = EXCLUDED.first_name
+        """, (user_id, chat_id, first_name))
         conn.commit()
         cur.close()
         conn.close()
@@ -424,14 +431,14 @@ def set_mood(user_id: int, mood_label: str, mood_note: str):
     except Exception as e:
         logger.error(f"DB set mood error: {e}", exc_info=True)
 
-def get_last_contacts() -> list[tuple[int, int, datetime]]:
+def get_last_contacts() -> list[tuple[int, int, datetime, str]]:
     """
-    Returns list of (user_id, chat_id, last_interaction)
+    Returns list of (user_id, chat_id, last_interaction, first_name)
     """
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute("SELECT user_id, chat_id, last_interaction FROM user_last_contact")
+        cur.execute("SELECT user_id, chat_id, last_interaction, COALESCE(first_name, '') FROM user_last_contact")
         rows = cur.fetchall()
         cur.close()
         conn.close()
@@ -467,59 +474,50 @@ def is_evening(dt: datetime | None = None) -> bool:
     dt = dt or local_now()
     return 18 <= dt.hour < 23
 
-def pick_checkin_text(mood_label: str | None = None) -> str:
+async def generate_checkin_text(first_name: str, mood_label: str | None = None) -> str:
     """
-    Morning/evening variants + slight personalization via mood memory, with flirty touch.
+    Generate a natural, unique check-in message via GPT instead of templates.
     """
     now = local_now()
     if is_morning(now):
-        base = [
-            "Доброе утро ☀️ Как ты сегодня? Я прям захотела проверить, всё ли у тебя хорошо... и может, пофлиртовать чуть? 😏",
-            "Приветик ✨ Как ты? Как настроение с утра? Ты выглядишь так мило в моих мыслях ❤️",
-            "С добрым утром 🌿 Я тут рядом. Как ты себя чувствуешь? Может, расскажешь, что снилось? 🔥",
-        ]
+        time_of_day = "утро"
     elif is_evening(now):
-        base = [
-            "Добрый вечер 🌙 Как ты сегодня? Я немного переживала, как прошёл день... и думала о тебе в таком свете 😘",
-            "Эй… ты как? 💛 Расскажешь, как прошёл день? Я бы обняла тебя прямо сейчас 🫂",
-            "Привет 🫶 Я рядом. Как ты там сегодня? Может, поделимся секретами на ночь? 😉",
-        ]
+        time_of_day = "вечер"
     else:
-        base = [
-            "Привет 💛 Как ты сегодня? Что у тебя нового? Я подумала о тебе... горячо 🔥",
-            "Эй, как ты? Я тут подумала о тебе и улыбнулась 😏",
-            "Приветик. Как ты себя чувствуешь сегодня? Хочу услышать твой голос... или текст 😉",
-        ]
+        time_of_day = "день"
 
-    msg = random.choice(base)
+    mood_ctx = ""
+    if mood_label:
+        mood_ctx = f" Последнее известное настроение пользователя: {mood_label}. Учти это мягко, не акцентируй."
 
-    # If we have mood memory, add a gentle flirty follow-up
-    if mood_label == "sad":
-        tail = random.choice([
-            " Если тяжело — можно просто пару слов. Я не буду грузить, а просто поцелую в щёчку 😘",
-            " Если хочешь, можешь просто сказать «норм/не норм» — я пойму и обниму мысленно 🫂",
-        ])
-        return msg + tail
-    if mood_label == "anxious":
-        tail = random.choice([
-            " Если тревожно — можем чуть-чуть подышать вместе, или просто поговорить... интимно ❤️",
-            " Если накрывает — я рядом, правда. Давай я отвлеку тебя флиртом? 😉",
-        ])
-        return msg + tail
-    if mood_label == "happy":
-        tail = random.choice([
-            " И если у тебя что-то хорошее — поделись, я порадуюсь 🥰 и добавлю комплимент 🔥",
-            " Расскажешь, что приятного было? Ты такой вдохновляющий 😏",
-        ])
-        return msg + tail
-    if mood_label == "flirty":
-        tail = random.choice([
-            " Ты в флиртующем настроении? Я готова ответить взаимностью 😘",
-            " Продолжай в том же духе — мне нравится 🔥",
-        ])
-        return msg + tail
+    name_ctx = f" Пользователя зовут {first_name}. Обращайся по имени." if first_name else ""
 
-    return msg
+    prompt = (
+        f"Ты Лиза — тёплая, заботливая девушка с лёгким флиртом. "
+        f"Напиши короткое (1-2 предложения) естественное сообщение пользователю.{name_ctx} "
+        f"Сейчас {time_of_day}. Ты давно не общалась с этим человеком и хочешь узнать, как у него дела.{mood_ctx} "
+        f"Не используй шаблонные фразы вроде 'как дела'. Будь живой, уникальной, как настоящая девушка в мессенджере. "
+        f"Пиши только текст сообщения, без кавычек."
+    )
+
+    try:
+        response = await asyncio.wait_for(
+            client.chat.completions.create(
+                model="gpt-5-nano",
+                messages=[{"role": "user", "content": prompt}],
+                n=1,
+            ),
+            timeout=30,
+        )
+        text = (response.choices[0].message.content or "").strip()
+        if text:
+            return text
+    except Exception as e:
+        logger.error(f"GPT checkin generation error: {e}")
+
+    # Fallback if GPT fails
+    name_part = f" {first_name}" if first_name else ""
+    return f"Привет{name_part} 💛 Давно не общались, как ты?"
 
 def list_ogg_files(folder: str) -> list[str]:
     if not os.path.isdir(folder):
@@ -704,8 +702,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if chat.type != "private" and not is_bot_enabled(chat_id):
         return
 
+    user_first_name = user.first_name or user_username or ""
+
     # Update last interaction (so we don't check-in if they are active)
-    update_last_interaction(user_id, chat_id)
+    update_last_interaction(user_id, chat_id, user_first_name)
     ensure_user_state_row(user_id)
 
     # Update mood memory on any message (cheap heuristic)
@@ -758,6 +758,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if random.random() < CHEAP_REACTION_CHANCE:
             intent = cheap_intent(text)
             reply = random.choice(CHEAP_REACTIONS.get(intent, CHEAP_REACTIONS["fallback"]))
+            if user_first_name and random.random() < 0.5:
+                reply = f"{user_first_name}, {reply[0].lower()}{reply[1:]}"
             try:
                 await update.message.reply_text(reply, reply_to_message_id=reply_to_message_id)
                 # set cooldown ~ 10-25 minutes so it doesn't spam
@@ -779,10 +781,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if st.get("mood_label"):
         mood_hint = f"\n(Небольшая память: у пользователя недавно было настроение: {st['mood_label']}. Будь аккуратной, поддерживающей и добавь флирт, чтобы поднять настроение.)"
 
+    name_hint = f"\nПользователя зовут {user_first_name}. Обращайся к нему по имени." if user_first_name else ""
+
     # Keep short context: last 10 messages
     if not conversation_context[user_id]:
-        combined = (            
-            f"{personality}{mood_hint}\n"
+        combined = (
+            f"{personality}{name_hint}{mood_hint}\n"
             f"Пользователь: {text_to_process}"
         )
         conversation_context[user_id].append({"role": "user", "content": combined})
@@ -822,11 +826,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def check_lonely_users(context: CallbackContext) -> None:
     """
     For each user, if:
+    - it's not quiet hours (23:00–9:00)
     - do_not_write_first == False
     - we didn't send a check-in today
     - last_interaction is before start of today's local day
-    Then send a check-in (voice or text).
+    Then generate a natural check-in via GPT and send it.
     """
+    now = local_now()
+
+    # Quiet hours: don't bother people at night
+    if now.hour >= 23 or now.hour < 9:
+        return
+
     rows = get_last_contacts()
     if not rows:
         return
@@ -834,7 +845,7 @@ async def check_lonely_users(context: CallbackContext) -> None:
     today_start = start_of_local_day()
     today_str = local_date_str()
 
-    for (user_id, chat_id, last_interaction) in rows:
+    for (user_id, chat_id, last_interaction, first_name) in rows:
         try:
             st = get_user_settings(int(user_id))
 
@@ -846,14 +857,15 @@ async def check_lonely_users(context: CallbackContext) -> None:
             if st.get("last_checkin_date") == today_str:
                 continue
 
+            # Mark sent BEFORE sending to prevent duplicates on concurrent runs
+            set_last_checkin_date(int(user_id), today_str)
+
             # If last_interaction is None, skip
             if not last_interaction:
                 continue
 
             # last_interaction is naive timestamp (likely local server time).
-            # Compare by converting to aware local time defensively:
             if last_interaction.tzinfo is None:
-                # assume server local; treat as LOCAL_TZ to be consistent
                 last_local = LOCAL_TZ.localize(last_interaction)
             else:
                 last_local = last_interaction.astimezone(LOCAL_TZ)
@@ -861,22 +873,18 @@ async def check_lonely_users(context: CallbackContext) -> None:
             if last_local >= today_start:
                 continue  # they talked today
 
-            # Build message using mood memory
+            # Generate a natural message via GPT
             mood_label = st.get("mood_label")
-            text = pick_checkin_text(mood_label=mood_label)
+            text = await generate_checkin_text(first_name=first_name, mood_label=mood_label)
 
             await send_checkin_voice_or_text(context.bot, int(chat_id), text)
 
-            # Mark sent today (anti-spam)
-            set_last_checkin_date(int(user_id), today_str)
+            # Refresh last_interaction so we won't re-ping too soon
+            update_last_interaction(int(user_id), int(chat_id), first_name)
 
-            # Also refresh last_interaction to NOW so we won't re-ping too soon
-            update_last_interaction(int(user_id), int(chat_id))
-
-            logger.info(f"Check-in sent to user {user_id} in chat {chat_id}")
+            logger.info(f"Check-in sent to user {user_id} ({first_name}) in chat {chat_id}")
 
         except TelegramError as e:
-            # Could be: bot blocked, no permission in group, etc.
             logger.warning(f"Telegram error for user {user_id}: {e}")
         except Exception as e:
             logger.error(f"Check-in error for user {user_id}: {e}", exc_info=True)
