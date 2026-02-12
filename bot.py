@@ -671,18 +671,18 @@ async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood
         if not messages or messages[0]["role"] != "system":
             messages = [{"role": "system", "content": system_prompt}] + messages
 
+        logger.info(f"GPT request: model=gpt-5-nano, messages={len(messages)}, system={messages[0]['content'][:80] if messages else 'none'}...")
+
         response = await asyncio.wait_for(
             client.chat.completions.create(
                 model="gpt-5-nano",
                 messages=messages,
-                max_completion_tokens=100 if dumb_mode else 200,
-                n=1,
             ),
             timeout=60,
         )
 
         reply = (response.choices[0].message.content or "").strip()
-        logger.info(f"GPT raw reply: {repr(reply)}")
+        logger.info(f"GPT raw reply: {repr(reply)}, finish_reason={response.choices[0].finish_reason}")
 
         if not reply:
             return "эээ… я задумалась 😅"
