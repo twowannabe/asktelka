@@ -760,8 +760,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     text_to_process = ""
     reply_to_message_id = update.message.message_id
 
+    # In private chat: always respond with GPT
+    if chat.type == "private":
+        should_gpt = True
+        text_to_process = text
+
     # 1) Mention
-    if is_bot_mentioned and not is_reply:
+    elif is_bot_mentioned and not is_reply:
         should_gpt = True
         text_to_process = re.sub(rf"@{re.escape(bot_username)}", "", text, flags=re.IGNORECASE).strip()
 
@@ -780,7 +785,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await update.message.reply_text("Я не вижу текста в исходном сообщении 😔", reply_to_message_id=reply_to_message_id)
             return
 
-    # 4) Random GPT
+    # 4) Random GPT (groups only)
     elif random.random() < RANDOM_GPT_RESPONSE_CHANCE:
         should_gpt = True
         text_to_process = text
