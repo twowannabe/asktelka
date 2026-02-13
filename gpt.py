@@ -47,17 +47,21 @@ async def generate_chat_comment(buffer: list[str]) -> str:
         logger.error(f"Group comment error: {e}", exc_info=True)
         return "ну вы даёте 😏"
 
-async def text_to_voice(text: str) -> bytes | None:
+VOICE_STYLES = {
+    "normal": {"stability": 0.5, "similarity_boost": 0.85, "style": 0.3},
+    "whisper": {"stability": 0.18, "similarity_boost": 0.85, "style": 0.7},
+    "moan": {"stability": 0.1, "similarity_boost": 0.9, "style": 0.95},
+}
+
+
+async def text_to_voice(text: str, style: str = "") -> bytes | None:
     if len(text.split()) > MAX_VOICE_WORDS:
         logger.info(f"Voice skipped: reply too long ({len(text.split())} words > {MAX_VOICE_WORDS})")
         return None
     try:
-        whisper = random.random() < WHISPER_CHANCE
-        voice_settings = {
-            "stability": 0.18 if whisper else 0.5,
-            "similarity_boost": 0.85,
-            "style": 0.7 if whisper else 0.3,
-        }
+        if not style:
+            style = "whisper" if random.random() < WHISPER_CHANCE else "normal"
+        voice_settings = VOICE_STYLES.get(style, VOICE_STYLES["normal"])
 
         async with httpx.AsyncClient(timeout=30) as http:
             resp = await http.post(

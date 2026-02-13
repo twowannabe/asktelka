@@ -572,10 +572,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     save_message(user_id, "assistant", reply)
 
+    # Detect requested voice style
+    voice_style = ""
+    force_voice = False
+    if re.search(r"стон|застон|постон", text_lower):
+        voice_style = "moan"
+        force_voice = True
+    elif re.search(r"шепн|шёпот|шепот|пошепч|шепч", text_lower):
+        voice_style = "whisper"
+        force_voice = True
+    elif re.search(r"озвуч|голос|скажи это|произнеси|повтори голосом|скажи вслух", text_lower):
+        force_voice = True
+
     sent_as_voice = False
     voice_chance = get_user_voice_chance(user_id)
-    if user_level >= LEVEL_VOICE_UNLOCK and random.random() < voice_chance:
-        voice_data = await text_to_voice(reply)
+    if force_voice or (user_level >= LEVEL_VOICE_UNLOCK and random.random() < voice_chance):
+        voice_data = await text_to_voice(reply, style=voice_style)
         if voice_data:
             try:
                 if chat.type == "private":
