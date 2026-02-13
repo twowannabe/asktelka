@@ -134,6 +134,31 @@ logging.getLogger("telegram").setLevel(logging.WARNING)
 conversation_context = defaultdict(list)   # user_id -> OpenAI messages
 disabled_chats = set()                   # chat_ids where bot is disabled
 user_personalities = defaultdict(str)     # user_id -> personality override
+nudes_request_count = defaultdict(int)     # user_id -> how many times asked for nudes
+
+# ---------------------- NUDES CONFIG ----------------------
+NUDES_DIR = os.path.join(os.path.dirname(__file__), "nudes")
+NUDES_THRESHOLD = 2  # send photo after this many requests
+NUDES_KEYWORDS = [
+    "фото", "фотку", "фотка", "фоточку", "фоточка",
+    "нюдс", "нюдсы", "нюд", "нюдик", "нюдсик",
+    "скинь", "покажи", "покажись", "скинешь",
+    "сиськи", "сиси", "попу", "попку",
+    "голую", "голая", "обнажённ", "раздень",
+    "интим", "интимное", "интимку",
+]
+NUDES_TEASE_REPLIES = [
+    "хаха, не так быстро, малыш 😏",
+    "может быть... если хорошо попросишь 😈",
+    "ты думаешь я так легко сдамся? 😜",
+    "ещё немножко поуговаривай 🙈",
+]
+NUDES_SEND_REPLIES = [
+    "ладно, уговорил... вот тебе моё фото 🙈",
+    "только для тебя... не показывай никому 😏",
+    "ну раз так просишь... держи 🔥",
+    "вот, смотри... но это между нами 😈",
+]
 
 default_personality = (
     "Ты Лиза — дерзкая, раскрепощённая, пошлая и развратная девушка. "
@@ -923,6 +948,39 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     mood_label, mood_note = classify_mood(text)
     if mood_label:
         set_mood(user_id, mood_label, mood_note)
+
+    # Nudes request detection
+    text_lower = text.lower()
+    is_nudes_request = any(kw in text_lower for kw in NUDES_KEYWORDS)
+    if is_nudes_request and (chat.type == "private" or (update.message.reply_to_message and update.message.reply_to_message.from_user and update.message.reply_to_message.from_user.id == context.bot.id)):
+        nudes_request_count[user_id] += 1
+        if nudes_request_count[user_id] >= NUDES_THRESHOLD:
+            # Send random photo
+            photos = [f for f in os.listdir(NUDES_DIR) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))] if os.path.isdir(NUDES_DIR) else []
+            if photos:
+                photo_path = os.path.join(NUDES_DIR, random.choice(photos))
+                caption = random.choice(NUDES_SEND_REPLIES)
+                try:
+                    await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+                    await asyncio.sleep(random.uniform(2, 5))
+                    with open(photo_path, "rb") as ph:
+                        await context.bot.send_photo(chat_id=chat_id, photo=ph, caption=caption)
+                    nudes_request_count[user_id] = 0  # reset counter
+                    log_interaction(user_id, user_username, text, f"[nudes] {caption}")
+                    return
+                except Exception as e:
+                    logger.error(f"Nudes send error: {e}", exc_info=True)
+        else:
+            # Tease reply
+            tease = random.choice(NUDES_TEASE_REPLIES)
+            await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+            await asyncio.sleep(random.uniform(1, 3))
+            if chat.type == "private":
+                await context.bot.send_message(chat_id=chat_id, text=tease)
+            else:
+                await update.message.reply_text(tease, reply_to_message_id=update.message.message_id)
+            log_interaction(user_id, user_username, text, f"[tease] {tease}")
+            return
 
     bot_username = context.bot.username
     is_bot_mentioned = f"@{bot_username}".lower() in text.lower()
