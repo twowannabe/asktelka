@@ -91,6 +91,35 @@ CHECK_LONELY_INTERVAL_SEC = 60 * 60 * 3  # every 3 hours
 # Dumb mode: shorter, simpler replies
 DUMB_MODE = True
 MAX_WORDS = 50
+
+# ---------------------- LEVEL SYSTEM ----------------------
+XP_PER_TEXT = 1
+XP_PER_VOICE = 3
+XP_PER_NUDES = 5
+XP_STREAK_MULTIPLIER = 1.5  # applied when streak >= 2 days
+
+LEVELS = [
+    (1, 0, "Незнакомец"),
+    (2, 50, "Знакомый"),
+    (3, 150, "Приятель"),
+    (4, 400, "Близкий друг"),
+    (5, 800, "Любимчик"),
+    (6, 1500, "Особенный"),
+    (7, 3000, "Родной"),
+]
+
+LEVEL_UP_MESSAGES = [
+    "ого, ты теперь {title}! 🎉 мне это нравится 😏",
+    "поздравляю, {title}! 💛 наши отношения развиваются 🔥",
+    "ты дорос до «{title}»! я горжусь тобой 😘",
+    "уровень {level}! теперь ты мой {title} 🥰",
+    "вау, {title}! ты знаешь, как завоевать девушку 😈",
+]
+
+# Level-based bonus thresholds
+LEVEL_VOICE_BOOST = 3       # from this level: +voice reply chance
+LEVEL_CHECKIN_BOOST = 5     # from this level: bot writes first more often
+
 # Consider "not talked today" if last_interaction is before local-day start
 # (We implement day start logic directly, not a fixed hour interval)
 
@@ -223,6 +252,36 @@ async def clear_mood_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     set_mood(user_id, None, "")
     await update.message.reply_text("Окей. Я очистила память про настроение ✨")
 
+async def level_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    info = get_user_level_info(user_id)
+    xp = info["xp"]
+    level = info["level"]
+    title = info["title"]
+    streak = info["streak_days"]
+
+    next_xp = get_next_level_xp(level)
+    if next_xp:
+        progress = xp - [t for l, t, _ in LEVELS if l == level][0]
+        needed = next_xp - [t for l, t, _ in LEVELS if l == level][0]
+        pct = min(int(progress / needed * 10), 10) if needed > 0 else 10
+        bar = "▓" * pct + "░" * (10 - pct)
+        next_line = f"До уровня {level + 1}: [{bar}] {xp}/{next_xp} XP"
+    else:
+        next_line = "Максимальный уровень! 👑"
+
+    streak_line = f"🔥 Стрик: {streak} дн." if streak >= 2 else ""
+    streak_bonus = " (x1.5 XP)" if streak >= 2 else ""
+
+    text = (
+        f"✨ Уровень {level} — {title}\n"
+        f"⭐ {xp} XP\n"
+        f"{next_line}\n"
+        f"{streak_line}{streak_bonus}"
+    ).strip()
+
+    await update.message.reply_text(text)
+
 async def disable_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.effective_chat.id
     disabled_chats.add(chat_id)
@@ -333,9 +392,21 @@ def init_db():
             last_checkin_date TEXT,
 
             -- anti-spam: cheap reaction cooldown (epoch seconds)
-            cheap_reaction_cooldown_until BIGINT DEFAULT 0
+            cheap_reaction_cooldown_until BIGINT DEFAULT 0,
+
+            -- level system
+            xp INTEGER DEFAULT 0,
+            level INTEGER DEFAULT 1,
+            streak_days INTEGER DEFAULT 0,
+            last_xp_date TEXT
         )
         """)
+
+        # Level system migrations
+        cur.execute("ALTER TABLE user_state ADD COLUMN IF NOT EXISTS xp INTEGER DEFAULT 0")
+        cur.execute("ALTER TABLE user_state ADD COLUMN IF NOT EXISTS level INTEGER DEFAULT 1")
+        cur.execute("ALTER TABLE user_state ADD COLUMN IF NOT EXISTS streak_days INTEGER DEFAULT 0")
+        cur.execute("ALTER TABLE user_state ADD COLUMN IF NOT EXISTS last_xp_date TEXT")
 
         conn.commit()
         cur.close()
@@ -529,6 +600,117 @@ def set_mood(user_id: int, mood_label: str, mood_note: str):
         conn.close()
     except Exception as e:
         logger.error(f"DB set mood error: {e}", exc_info=True)
+
+def get_level_for_xp(xp: int) -> tuple[int, str]:
+    """Returns (level_number, title) for given XP."""
+    result = LEVELS[0]
+    for lvl, threshold, title in LEVELS:
+        if xp >= threshold:
+            result = (lvl, title)
+        else:
+            break
+    return result
+
+def get_next_level_xp(current_level: int) -> int | None:
+    """Returns XP needed for next level, or None if max."""
+    for lvl, threshold, _ in LEVELS:
+        if lvl == current_level + 1:
+            return threshold
+    return None
+
+def get_user_level_info(user_id: int) -> dict:
+    """Returns xp, level, streak_days, last_xp_date, title."""
+    ensure_user_state_row(user_id)
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT COALESCE(xp, 0), COALESCE(level, 1),
+                   COALESCE(streak_days, 0), last_xp_date
+            FROM user_state WHERE user_id=%s
+        """, (user_id,))
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        if row:
+            lvl, title = get_level_for_xp(row[0])
+            return {"xp": row[0], "level": lvl, "streak_days": row[2],
+                    "last_xp_date": row[3], "title": title}
+    except Exception as e:
+        logger.error(f"DB get_user_level_info error: {e}", exc_info=True)
+    return {"xp": 0, "level": 1, "streak_days": 0, "last_xp_date": None, "title": "Незнакомец"}
+
+def add_xp(user_id: int, base_xp: int) -> tuple[int, int, bool]:
+    """
+    Add XP to user, update streak, recalculate level.
+    Returns (new_xp, new_level, leveled_up).
+    """
+    ensure_user_state_row(user_id)
+    today = local_date_str()
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT COALESCE(xp, 0), COALESCE(level, 1),
+                   COALESCE(streak_days, 0), last_xp_date
+            FROM user_state WHERE user_id=%s
+        """, (user_id,))
+        row = cur.fetchone()
+        old_xp, old_level, streak, last_date = row if row else (0, 1, 0, None)
+
+        # Update streak
+        if last_date == today:
+            pass  # already counted today
+        else:
+            from datetime import timedelta
+            yesterday = local_date_str(local_now() - timedelta(days=1))
+            if last_date == yesterday:
+                streak += 1
+            else:
+                streak = 1
+
+        # Apply streak multiplier
+        xp_gain = base_xp
+        if streak >= 2:
+            xp_gain = int(base_xp * XP_STREAK_MULTIPLIER)
+
+        new_xp = old_xp + xp_gain
+        new_level, new_title = get_level_for_xp(new_xp)
+        leveled_up = new_level > old_level
+
+        cur.execute("""
+            UPDATE user_state
+            SET xp=%s, level=%s, streak_days=%s, last_xp_date=%s
+            WHERE user_id=%s
+        """, (new_xp, new_level, streak, today, user_id))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return new_xp, new_level, leveled_up
+    except Exception as e:
+        logger.error(f"DB add_xp error: {e}", exc_info=True)
+        return 0, 1, False
+
+async def send_level_up(bot, chat_id: int, level: int, chat_type: str = "private"):
+    """Send a level-up congratulation message."""
+    _, title = get_level_for_xp(get_next_level_xp(level - 1) or 0)
+    # Find exact title for this level
+    for lvl, _, t in LEVELS:
+        if lvl == level:
+            title = t
+            break
+    msg = random.choice(LEVEL_UP_MESSAGES).format(title=title, level=level)
+    try:
+        await bot.send_message(chat_id=chat_id, text=msg)
+    except Exception as e:
+        logger.error(f"Level-up msg error: {e}")
+
+def get_user_voice_chance(user_id: int) -> float:
+    """Returns voice reply chance, boosted by level."""
+    info = get_user_level_info(user_id)
+    if info["level"] >= LEVEL_VOICE_BOOST:
+        return VOICE_REPLY_CHANCE * 1.5
+    return VOICE_REPLY_CHANCE
 
 def get_last_contacts() -> list[tuple]:
     """
@@ -828,6 +1010,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/mood — показать, что я запомнила про твоё настроение\n"
         "/clear_mood — очистить память настроения\n"
         "/stats — статистика общения с Лизой\n"
+        "/level — твой уровень и XP\n"
     )
     await update.message.reply_text(text)
 
@@ -985,6 +1168,11 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     log_interaction(user_id, user_username, f"[voice] {text}", f"{'[voice] ' if sent_as_voice else ''}{reply}")
 
+    # XP for voice message
+    _, new_level, leveled_up = add_xp(user_id, XP_PER_VOICE)
+    if leveled_up:
+        await send_level_up(context.bot, chat_id, new_level, chat.type)
+
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.message is None:
@@ -1034,6 +1222,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                         await context.bot.send_photo(chat_id=chat_id, photo=ph, caption=caption)
                     nudes_request_count[user_id] = 0  # reset counter
                     log_interaction(user_id, user_username, text, f"[nudes] {caption}")
+                    # XP for nudes
+                    _, new_level, leveled_up = add_xp(user_id, XP_PER_NUDES)
+                    if leveled_up:
+                        await send_level_up(context.bot, chat_id, new_level, chat.type)
                     return
                 except Exception as e:
                     logger.error(f"Nudes send error: {e}", exc_info=True)
@@ -1158,13 +1350,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     })
     conversation_context[user_id] = conversation_context[user_id][-10:]
 
-    # Randomly send as voice message
+    # Randomly send as voice message (boosted by level)
     sent_as_voice = False
-    if random.random() < VOICE_REPLY_CHANCE:
+    voice_chance = get_user_voice_chance(user_id)
+    if random.random() < voice_chance:
         voice_data = await text_to_voice(reply)
         if voice_data:
             try:
-    
                 if chat.type == "private":
                     await context.bot.send_voice(chat_id=chat_id, voice=io.BytesIO(voice_data))
                 else:
@@ -1192,6 +1384,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             logger.error(f"Telegram send error: {e}", exc_info=True)
 
     log_interaction(user_id, user_username, text_to_process, f"{'[voice] ' if sent_as_voice else ''}{reply}")
+
+    # XP for text message
+    _, new_level, leveled_up = add_xp(user_id, XP_PER_TEXT)
+    if leveled_up:
+        await send_level_up(context.bot, chat_id, new_level, chat.type)
 
 # ---------------------- DAILY CHECK-IN JOB ----------------------
 # (Оставил без изменений, кроме вызова pick_checkin_text, который уже флиртующий)
@@ -1345,6 +1542,7 @@ def main():
     application.add_handler(CommandHandler("mood", mood_cmd))
     application.add_handler(CommandHandler("clear_mood", clear_mood_cmd))
     application.add_handler(CommandHandler("stats", stats_cmd))
+    application.add_handler(CommandHandler("level", level_cmd))
 
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
