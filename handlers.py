@@ -20,6 +20,7 @@ from config import (
     MEDIA_REACTIONS, MEDIA_REACTION_CHANCE,
     RANDOM_GPT_RESPONSE_CHANCE,
     GROUP_COMMENT_CHANCE, GROUP_COMMENT_BUFFER_SIZE, chat_message_buffer,
+    LEVEL_VOICE_UNLOCK, LEVEL_NUDES_UNLOCK,
     XP_PER_TEXT, XP_PER_VOICE, XP_PER_NUDES,
     MEMORY_SUMMARIZE_EVERY,
     ACHIEVEMENTS, ACHIEVEMENT_MESSAGES,
@@ -313,6 +314,9 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if mood_label:
         set_mood(user_id, mood_label, mood_note)
 
+    user_level_info = get_user_level_info(user_id)
+    user_level = user_level_info["level"]
+
     personality = user_personalities.get(user_id) or load_user_personality_from_db(user_id) or ""
     st = get_user_settings(user_id)
     user_mood = st.get("mood_label") or ""
@@ -335,6 +339,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         personality=personality,
         mood_label=user_mood,
         memory=memory,
+        user_level=user_level,
     )
 
     if not reply.strip():
@@ -345,7 +350,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     reply_to_message_id = update.message.message_id
 
     sent_as_voice = False
-    voice_data = await text_to_voice(reply)
+    voice_data = await text_to_voice(reply) if user_level >= LEVEL_VOICE_UNLOCK else None
     if voice_data:
         try:
             if chat.type == "private":
@@ -413,9 +418,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             return
 
     # Nudes request detection
+    user_level_info = get_user_level_info(user_id)
+    user_level = user_level_info["level"]
+
     text_lower = text.lower()
     is_nudes_request = any(kw in text_lower for kw in NUDES_KEYWORDS)
     if is_nudes_request and (chat.type == "private" or (update.message.reply_to_message and update.message.reply_to_message.from_user and update.message.reply_to_message.from_user.id == context.bot.id)):
+        if user_level < LEVEL_NUDES_UNLOCK:
+            tease = "хаха, мы ещё не настолько близки 😏 пообщайся со мной побольше"
+            await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+            await asyncio.sleep(random.uniform(1, 2))
+            if chat.type == "private":
+                await context.bot.send_message(chat_id=chat_id, text=tease)
+            else:
+                await update.message.reply_text(tease, reply_to_message_id=update.message.message_id)
+            return
         nudes_request_count[user_id] += 1
         if nudes_request_count[user_id] >= NUDES_THRESHOLD:
             photos = [f for f in os.listdir(NUDES_DIR) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))] if os.path.isdir(NUDES_DIR) else []
@@ -555,6 +572,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         personality=personality,
         mood_label=user_mood,
         memory=memory,
+        user_level=user_level,
     )
 
     if not reply.strip():
@@ -564,7 +582,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     sent_as_voice = False
     voice_chance = get_user_voice_chance(user_id)
-    if random.random() < voice_chance:
+    if user_level >= LEVEL_VOICE_UNLOCK and random.random() < voice_chance:
         voice_data = await text_to_voice(reply)
         if voice_data:
             try:

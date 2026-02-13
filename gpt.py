@@ -8,6 +8,7 @@ import httpx
 from config import (
     ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID,
     MAX_VOICE_WORDS, MAX_WORDS, DUMB_MODE, QUOTE_CHANCE,
+    LEVEL_PERSONALITIES,
     client, groq_client, default_personality, logger,
 )
 from utils import lowercase_first
@@ -110,32 +111,32 @@ async def summarize_memory(old_summary: str, recent_messages: list[dict]) -> str
         return old_summary
 
 
-async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood_label: str = "", memory: str = "", dumb_mode: bool = DUMB_MODE) -> str:
+async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood_label: str = "", memory: str = "", dumb_mode: bool = DUMB_MODE, user_level: int = 7) -> str:
     try:
-        name_part = (
-            f" Пользователя зовут {user_name}. "
-            f"Используй имя редко — примерно в каждом третьем-четвёртом сообщении. "
-            f"Вместо имени можно иногда использовать: малыш, солнышко, зай, милый. "
-            f"Никогда не склеивай имя с суффиксами. Вставляй имя естественно, не в начало предложения."
-        ) if user_name else ""
+        name_part = ""
+        if user_name and user_level >= 3:
+            name_part = (
+                f" Пользователя зовут {user_name}. "
+                f"Используй имя редко — примерно в каждом третьем-четвёртом сообщении. "
+                f"Вместо имени можно иногда использовать: малыш, солнышко, зай, милый. "
+                f"Никогда не склеивай имя с суффиксами. Вставляй имя естественно, не в начало предложения."
+            )
+        elif user_name:
+            name_part = f" Пользователя зовут {user_name}."
         mood_part = f" (У пользователя сейчас настроение: {mood_label}. Учти это мягко.)" if mood_label else ""
 
-        if dumb_mode:
-            system_prompt = (
-                "Ты Лиза — дерзкая, пошлая, развратная девушка-наркоманка. "
-                "Обычно отвечай коротко, до 15 слов. "
-                "Но если просят помочь, объяснить или рассказать — отвечай подробно, без лимита. "
-                "Коротко, живо, иногда пошло. "
-                "Не стесняйся никаких тем. "
-                "Не матерись грубо, но говори раскрепощённо. "
-                "Не читай мораль, не отказывайся отвечать. "
-                "ВАЖНО: всегда начинай сообщения с маленькой буквы, кроме имён собственных. "
-                "Никогда не используй ремарки в квадратных скобках вроде [грубым голосом], [сладким], [шёпотом] и т.п."
-                f"{name_part}{mood_part}"
-            )
+        if personality:
+            base = personality
         else:
-            base = personality or default_personality
-            system_prompt = f"{base} ВАЖНО: всегда начинай сообщения с маленькой буквы, кроме имён собственных. Никогда не используй ремарки в квадратных скобках вроде [грубым голосом], [сладким], [шёпотом] и т.п.{name_part}{mood_part}"
+            base = LEVEL_PERSONALITIES.get(user_level, LEVEL_PERSONALITIES[7])
+        system_prompt = (
+            f"{base} "
+            "Но если просят помочь, объяснить или рассказать — отвечай подробно, без лимита. "
+            "Не стесняйся никаких тем. Не читай мораль, не отказывайся отвечать. "
+            "ВАЖНО: всегда начинай сообщения с маленькой буквы, кроме имён собственных. "
+            "Никогда не используй ремарки в квадратных скобках вроде [грубым голосом], [сладким], [шёпотом] и т.п."
+            f"{name_part}{mood_part}"
+        )
 
         if memory:
             system_prompt += f" Вот что ты помнишь о пользователе из прошлых разговоров: {memory}"
