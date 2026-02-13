@@ -52,6 +52,19 @@ ELEVENLABS_VOICE_ID = config("ELEVENLABS_VOICE_ID")
 # Chance to reply with voice instead of text
 VOICE_REPLY_CHANCE = 1 / 5
 
+# Chance to react with emoji instead of text
+EMOJI_REACTION_CHANCE = 1 / 8
+REACTION_EMOJIS = ["🔥", "❤️", "😂", "👍", "🥰", "😈", "💋", "🙈"]
+
+# Chance to send photo in check-in
+CHECKIN_PHOTO_CHANCE = 1 / 4
+CHECKIN_PHOTO_CAPTIONS = [
+    "скучаю, вот тебе фоточка 🙈",
+    "это я сейчас 😏",
+    "думала о тебе... держи 💋",
+    "вот, смотри какая я сегодня 🔥",
+]
+
 DB_HOST = config("DB_HOST")
 DB_PORT = config("DB_PORT")
 DB_NAME = config("DB_NAME")
@@ -1063,8 +1076,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         should_gpt = True
         text_to_process = text
 
-    # If not GPT, maybe cheap reaction
+    # If not GPT, maybe emoji reaction or cheap reaction
     if not should_gpt:
+        # Try emoji reaction first
+        if random.random() < EMOJI_REACTION_CHANCE:
+            emoji = random.choice(REACTION_EMOJIS)
+            try:
+                from telegram import ReactionTypeEmoji
+                await update.message.set_reaction([ReactionTypeEmoji(emoji=emoji)])
+                return
+            except Exception as e:
+                logger.debug(f"Emoji reaction failed: {e}")
+
         st = get_user_settings(user_id)
         now_epoch = int(datetime.now(timezone.utc).timestamp())
         if now_epoch < int(st["cheap_reaction_cooldown_until"] or 0):
@@ -1210,15 +1233,23 @@ async def check_lonely_users(context: CallbackContext) -> None:
             if last_local >= today_start:
                 continue  # they talked today
 
-            # Generate a natural message via GPT
-            mood_label = st.get("mood_label")
-            text = await generate_checkin_text(first_name=first_name, mood_label=mood_label)
+            # Sometimes send a photo instead of text
+            photos = [f for f in os.listdir(NUDES_DIR) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))] if os.path.isdir(NUDES_DIR) else []
+            if photos and random.random() < CHECKIN_PHOTO_CHANCE and chat_type == "private":
+                photo_path = os.path.join(NUDES_DIR, random.choice(photos))
+                caption = random.choice(CHECKIN_PHOTO_CAPTIONS)
+                with open(photo_path, "rb") as ph:
+                    await context.bot.send_photo(chat_id=int(chat_id), photo=ph, caption=caption)
+            else:
+                # Generate a natural message via GPT
+                mood_label = st.get("mood_label")
+                text = await generate_checkin_text(first_name=first_name, mood_label=mood_label)
 
-            # In group chats, prepend @username so they get a notification
-            if chat_type != "private" and username:
-                text = f"@{username}, {text[0].lower()}{text[1:]}"
+                # In group chats, prepend @username so they get a notification
+                if chat_type != "private" and username:
+                    text = f"@{username}, {text[0].lower()}{text[1:]}"
 
-            await send_checkin_voice_or_text(context.bot, int(chat_id), text)
+                await send_checkin_voice_or_text(context.bot, int(chat_id), text)
 
             # Refresh last_interaction so we won't re-ping too soon
             update_last_interaction(int(user_id), int(chat_id), first_name)
