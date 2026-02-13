@@ -20,9 +20,12 @@ async def text_to_voice(text: str) -> bytes | None:
         logger.info(f"Voice skipped: reply too long ({len(text.split())} words > {MAX_VOICE_WORDS})")
         return None
     try:
-        tts_text = text
-        if random.random() < WHISPER_CHANCE:
-            tts_text = f"(шёпотом) {text}"
+        whisper = random.random() < WHISPER_CHANCE
+        voice_settings = {
+            "stability": 0.18 if whisper else 0.5,
+            "similarity_boost": 0.85,
+            "style": 0.7 if whisper else 0.3,
+        }
 
         async with httpx.AsyncClient(timeout=30) as http:
             resp = await http.post(
@@ -32,9 +35,10 @@ async def text_to_voice(text: str) -> bytes | None:
                     "Content-Type": "application/json",
                 },
                 json={
-                    "text": tts_text,
+                    "text": text,
                     "model_id": "eleven_multilingual_v2",
                     "output_format": "ogg_opus",
+                    "voice_settings": voice_settings,
                 },
             )
             if resp.status_code == 200:
