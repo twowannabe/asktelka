@@ -92,16 +92,13 @@ client = AsyncOpenAI(api_key=XAI_API_KEY, base_url="https://api.x.ai/v1")
 groq_client = AsyncOpenAI(api_key=GROQ_API_KEY, base_url="https://api.groq.com/openai/v1")
 
 
-VOICE_SHORT_PHRASES = [
-    "да", "нет", "не знаю", "ахаха", "хаха",
-    "да, ахаха", "нет, хаха", "не знаю, ахаха",
-    "да)))", "нет))", "ахахах)))", "хаха)))",
-    "не знаю)))", "да, хаха)))", "нет, ахаха))",
-]
+MAX_VOICE_WORDS = 5
 
 async def text_to_voice(text: str) -> bytes | None:
-    """Convert text to voice using ElevenLabs TTS API. Returns OGG bytes or None."""
-    text = random.choice(VOICE_SHORT_PHRASES)
+    """Convert text to voice using ElevenLabs TTS API. Returns OGG bytes or None.
+    Only short replies (up to MAX_VOICE_WORDS) are sent as voice."""
+    if len(text.split()) > MAX_VOICE_WORDS:
+        return None
     try:
         async with httpx.AsyncClient(timeout=30) as http:
             resp = await http.post(
