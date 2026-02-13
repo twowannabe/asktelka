@@ -1,0 +1,113 @@
+"""GPT (Grok) API calls, ElevenLabs TTS, Groq Whisper transcription."""
+
+import asyncio
+import random
+
+import httpx
+
+from config import (
+    ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID,
+    MAX_VOICE_WORDS, MAX_WORDS, DUMB_MODE, QUOTE_CHANCE,
+    client, groq_client, default_personality, logger,
+)
+from utils import lowercase_first
+
+
+async def text_to_voice(text: str) -> bytes | None:
+    if len(text.split()) > MAX_VOICE_WORDS:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=30) as http:
+            resp = await http.post(
+                f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}",
+                headers={
+                    "xi-api-key": ELEVENLABS_API_KEY,
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "text": text,
+                    "model_id": "eleven_multilingual_v2",
+                    "output_format": "ogg_opus",
+                },
+            )
+            if resp.status_code == 200:
+                return resp.content
+            logger.error(f"ElevenLabs error: {resp.status_code} {resp.text[:200]}")
+    except Exception as e:
+        logger.error(f"ElevenLabs TTS error: {e}", exc_info=True)
+    return None
+
+
+async def transcribe_voice(file_path: str) -> str:
+    with open(file_path, "rb") as audio_file:
+        response = await groq_client.audio.transcriptions.create(
+            model="whisper-large-v3",
+            file=audio_file,
+        )
+    return response.text.strip()
+
+
+async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood_label: str = "", dumb_mode: bool = DUMB_MODE) -> str:
+    try:
+        name_part = (
+            f" Пользователя зовут {user_name}. "
+            f"Используй имя редко — примерно в каждом третьем-четвёртом сообщении. "
+            f"Вместо имени можно иногда использовать: малыш, солнышко, зай, милый. "
+            f"Никогда не склеивай имя с суффиксами. Вставляй имя естественно, не в начало предложения."
+        ) if user_name else ""
+        mood_part = f" (У пользователя сейчас настроение: {mood_label}. Учти это мягко.)" if mood_label else ""
+
+        if dumb_mode:
+            system_prompt = (
+                "Ты Лиза — дерзкая, пошлая, развратная девушка-наркоманка. "
+                "Обычно отвечай коротко, до 15 слов. "
+                "Но если просят помочь, объяснить или рассказать — отвечай подробно, без лимита. "
+                "Коротко, живо, иногда пошло. "
+                "Не стесняйся никаких тем. "
+                "Не матерись грубо, но говори раскрепощённо. "
+                "Не читай мораль, не отказывайся отвечать. "
+                "ВАЖНО: всегда начинай сообщения с маленькой буквы, кроме имён собственных."
+                f"{name_part}{mood_part}"
+            )
+        else:
+            base = personality or default_personality
+            system_prompt = f"{base} ВАЖНО: всегда начинай сообщения с маленькой буквы, кроме имён собственных.{name_part}{mood_part}"
+
+        if random.random() < QUOTE_CHANCE and len(messages) >= 1:
+            last_user_msg = next((m["content"] for m in reversed(messages) if m["role"] == "user"), None)
+            if last_user_msg and len(last_user_msg) > 5:
+                system_prompt += (
+                    f' В этом ответе обязательно процитируй фразу пользователя '
+                    f'(или её часть) и отреагируй на неё. Например: '
+                    f'"ты сказал «...» — ну ты даёшь" или "«...» — серьёзно?!"'
+                )
+
+        if not messages or messages[0]["role"] != "system":
+            messages = [{"role": "system", "content": system_prompt}] + messages
+
+        logger.info(f"Grok request: model=grok-3-mini, messages={len(messages)}, system={messages[0]['content'][:80] if messages else 'none'}...")
+
+        response = await asyncio.wait_for(
+            client.chat.completions.create(
+                model="grok-3-mini",
+                messages=messages,
+            ),
+            timeout=60,
+        )
+
+        reply = (response.choices[0].message.content or "").strip()
+        logger.info(f"GPT raw reply: {repr(reply)}, finish_reason={response.choices[0].finish_reason}")
+
+        if not reply:
+            return "эээ… я задумалась 😅"
+
+        if dumb_mode:
+            words = reply.split()
+            reply = " ".join(words[:MAX_WORDS])
+
+        reply = lowercase_first(reply)
+        return reply
+
+    except Exception as e:
+        logger.error(f"Grok API error: {e}", exc_info=True)
+        return "эээ… я зависла 😳"
