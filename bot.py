@@ -56,6 +56,9 @@ VOICE_REPLY_CHANCE = 1 / 5
 EMOJI_REACTION_CHANCE = 1 / 8
 REACTION_EMOJIS = ["🔥", "❤️", "😂", "👍", "🥰", "😈", "💋", "🙈"]
 
+# Chance to quote user's previous message in reply
+QUOTE_CHANCE = 1 / 6
+
 # Chance to send photo in check-in
 CHECKIN_PHOTO_CHANCE = 1 / 4
 CHECKIN_PHOTO_CAPTIONS = [
@@ -761,6 +764,16 @@ async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood
         else:
             base = personality or default_personality
             system_prompt = f"{base}{name_part}{mood_part}"
+
+        # Sometimes ask to quote the user
+        if random.random() < QUOTE_CHANCE and len(messages) >= 1:
+            last_user_msg = next((m["content"] for m in reversed(messages) if m["role"] == "user"), None)
+            if last_user_msg and len(last_user_msg) > 5:
+                system_prompt += (
+                    f' В этом ответе обязательно процитируй фразу пользователя '
+                    f'(или её часть) и отреагируй на неё. Например: '
+                    f'"ты сказал «...» — ну ты даёшь" или "«...» — серьёзно?!"'
+                )
 
         # Ensure system role exists at top
         if not messages or messages[0]["role"] != "system":
