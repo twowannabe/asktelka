@@ -19,6 +19,7 @@ import re
 import random
 import logging
 import asyncio
+import tempfile
 from collections import defaultdict
 from datetime import datetime, timezone
 
@@ -42,6 +43,7 @@ from telegram.ext import (
 # ---------------------- CONFIG ----------------------
 TELEGRAM_TOKEN = config("TELEGRAM_TOKEN")
 XAI_API_KEY = config("XAI_API_KEY")
+GROQ_API_KEY = config("GROQ_API_KEY")
 
 DB_HOST = config("DB_HOST")
 DB_PORT = config("DB_PORT")
@@ -78,6 +80,9 @@ VOICE_DIR_EVENING = os.path.join(os.path.dirname(__file__), "voices", "checkin_e
 
 # ---------------------- XAI (GROK) ----------------------
 client = AsyncOpenAI(api_key=XAI_API_KEY, base_url="https://api.x.ai/v1")
+
+# ---------------------- GROQ (WHISPER) ----------------------
+groq_client = AsyncOpenAI(api_key=GROQ_API_KEY, base_url="https://api.groq.com/openai/v1")
 
 # ---------------------- LOGGING ----------------------
 logging.basicConfig(
@@ -741,6 +746,102 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 # (Остальные команды без изменений)
 
 # ---------------------- MESSAGE HANDLER ----------------------
+async def transcribe_voice(file_path: str) -> str:
+    """Transcribe voice message using Groq Whisper."""
+    with open(file_path, "rb") as audio_file:
+        response = await groq_client.audio.transcriptions.create(
+            model="whisper-large-v3",
+            file=audio_file,
+        )
+    return response.text.strip()
+
+
+async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle voice messages: transcribe via Groq Whisper, then respond via Grok."""
+    if update.message is None:
+        return
+
+    chat = update.effective_chat
+    user = update.effective_user
+    chat_id = chat.id
+    user_id = user.id
+    user_username = user.username or ""
+
+    if chat.type != "private" and not is_bot_enabled(chat_id):
+        return
+
+    user_first_name = user.first_name or user_username or ""
+    update_last_interaction(user_id, chat_id, user_first_name, user_username, chat.type)
+    ensure_user_state_row(user_id)
+
+    voice = update.message.voice or update.message.audio
+    if not voice:
+        return
+
+    try:
+        # Download voice file
+        file = await context.bot.get_file(voice.file_id)
+        with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tmp:
+            tmp_path = tmp.name
+            await file.download_to_drive(tmp_path)
+
+        # Transcribe
+        text = await transcribe_voice(tmp_path)
+        os.unlink(tmp_path)
+
+        if not text:
+            await update.message.reply_text("Не расслышала, скажи ещё раз 🎧")
+            return
+
+        logger.info(f"Voice transcribed: {text[:100]}...")
+
+    except Exception as e:
+        logger.error(f"Voice transcription error: {e}", exc_info=True)
+        await update.message.reply_text("Не смогла разобрать голосовое 😔")
+        return
+
+    # Update mood
+    mood_label, mood_note = classify_mood(text)
+    if mood_label:
+        set_mood(user_id, mood_label, mood_note)
+
+    # Load personality and mood
+    personality = user_personalities.get(user_id) or load_user_personality_from_db(user_id) or ""
+    st = get_user_settings(user_id)
+    user_mood = st.get("mood_label") or ""
+
+    conversation_context[user_id].append({"role": "user", "content": text})
+    conversation_context[user_id] = conversation_context[user_id][-10:]
+
+    # Typing + delay
+    await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+    await asyncio.sleep(random.uniform(1, 4))
+
+    reply = await ask_chatgpt(
+        conversation_context[user_id],
+        user_name=user_first_name,
+        personality=personality,
+        mood_label=user_mood,
+    )
+
+    if not reply.strip():
+        reply = "ммм… напиши ещё 😅"
+
+    conversation_context[user_id].append({"role": "assistant", "content": reply})
+    conversation_context[user_id] = conversation_context[user_id][-10:]
+
+    reply_to_message_id = update.message.message_id
+    try:
+        if chat.type == "private":
+            await context.bot.send_message(chat_id=chat_id, text=reply)
+        else:
+            await update.message.reply_text(reply, reply_to_message_id=reply_to_message_id)
+    except Exception as e:
+        logger.error(f"Telegram send error: {e}", exc_info=True)
+
+    log_interaction(user_id, user_username, f"[voice] {text}", reply)
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.message is None:
         return
@@ -991,6 +1092,7 @@ def main():
     application.add_handler(CommandHandler("clear_mood", clear_mood_cmd))
 
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    application.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
     application.add_error_handler(error_handler)
 
     # Schedule periodic lonely-user checks
