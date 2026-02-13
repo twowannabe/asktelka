@@ -25,7 +25,6 @@ from datetime import datetime, timezone
 import psycopg2
 from decouple import config
 from openai import AsyncOpenAI
-import openai
 
 import pytz
 from telegram import Update
@@ -42,7 +41,7 @@ from telegram.ext import (
 
 # ---------------------- CONFIG ----------------------
 TELEGRAM_TOKEN = config("TELEGRAM_TOKEN")
-OPENAI_API_KEY = config("OPENAI_API_KEY")
+XAI_API_KEY = config("XAI_API_KEY")
 
 DB_HOST = config("DB_HOST")
 DB_PORT = config("DB_PORT")
@@ -77,9 +76,8 @@ MAX_WORDS = 15
 VOICE_DIR_MORNING = os.path.join(os.path.dirname(__file__), "voices", "checkin_morning")
 VOICE_DIR_EVENING = os.path.join(os.path.dirname(__file__), "voices", "checkin_evening")
 
-# ---------------------- OPENAI ----------------------
-openai.api_key = OPENAI_API_KEY
-client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+# ---------------------- XAI (GROK) ----------------------
+client = AsyncOpenAI(api_key=XAI_API_KEY, base_url="https://api.x.ai/v1")
 
 # ---------------------- LOGGING ----------------------
 logging.basicConfig(
@@ -518,7 +516,7 @@ async def generate_checkin_text(first_name: str, mood_label: str | None = None) 
     try:
         response = await asyncio.wait_for(
             client.chat.completions.create(
-                model="gpt-5-nano",
+                model="grok-3-mini",
                 messages=[{"role": "user", "content": prompt}],
                 n=1,
             ),
@@ -687,11 +685,11 @@ async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood
         if not messages or messages[0]["role"] != "system":
             messages = [{"role": "system", "content": system_prompt}] + messages
 
-        logger.info(f"GPT request: model=gpt-5-nano, messages={len(messages)}, system={messages[0]['content'][:80] if messages else 'none'}...")
+        logger.info(f"Grok request: model=grok-3-mini, messages={len(messages)}, system={messages[0]['content'][:80] if messages else 'none'}...")
 
         response = await asyncio.wait_for(
             client.chat.completions.create(
-                model="gpt-5-nano",
+                model="grok-3-mini",
                 messages=messages,
             ),
             timeout=60,
@@ -711,7 +709,7 @@ async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood
         return reply
 
     except Exception as e:
-        logger.error(f"OpenAI error: {e}", exc_info=True)
+        logger.error(f"Grok API error: {e}", exc_info=True)
         return "эээ… я зависла 😳"
     
 # ---------------------- COMMANDS ----------------------
