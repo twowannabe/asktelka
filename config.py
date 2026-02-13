@@ -113,6 +113,15 @@ CHECKIN_PHOTO_CAPTIONS = [
 ]
 
 NUDES_THRESHOLD = 2
+NUDES_THRESHOLD_BY_LEVEL = {
+    1: 8,
+    2: 6,
+    3: 5,
+    4: 4,
+    5: 2,
+    6: 2,
+    7: 1,
+}
 NUDES_KEYWORDS = [
     "фото", "фотку", "фотка", "фоточку", "фоточка",
     "нюдс", "нюдсы", "нюд", "нюдик", "нюдсик",
