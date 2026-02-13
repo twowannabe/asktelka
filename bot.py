@@ -92,8 +92,14 @@ client = AsyncOpenAI(api_key=XAI_API_KEY, base_url="https://api.x.ai/v1")
 groq_client = AsyncOpenAI(api_key=GROQ_API_KEY, base_url="https://api.groq.com/openai/v1")
 
 
+MAX_VOICE_WORDS = 3
+
 async def text_to_voice(text: str) -> bytes | None:
     """Convert text to voice using ElevenLabs TTS API. Returns OGG bytes or None."""
+    # Trim to MAX_VOICE_WORDS for shorter/cheaper voice replies
+    words = text.split()
+    if len(words) > MAX_VOICE_WORDS:
+        text = " ".join(words[:MAX_VOICE_WORDS])
     try:
         async with httpx.AsyncClient(timeout=30) as http:
             resp = await http.post(
