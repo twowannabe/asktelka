@@ -801,10 +801,51 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/writefirst — снова можно писать первой\n"
         "/mood — показать, что я запомнила про твоё настроение\n"
         "/clear_mood — очистить память настроения\n"
+        "/stats — статистика общения с Лизой\n"
     )
     await update.message.reply_text(text)
 
-# (Остальные команды без изменений)
+async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute("SELECT COUNT(*) FROM askgbt_logs WHERE user_id = %s", (user_id,))
+        total = cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM askgbt_logs WHERE user_id = %s AND gpt_reply LIKE '[voice]%%'", (user_id,))
+        voice_replies = cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM askgbt_logs WHERE user_id = %s AND user_message LIKE '[voice]%%'", (user_id,))
+        voice_sent = cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM askgbt_logs WHERE user_id = %s AND gpt_reply LIKE '[nudes]%%'", (user_id,))
+        nudes = cur.fetchone()[0]
+
+        cur.execute("SELECT MIN(timestamp), MAX(timestamp) FROM askgbt_logs WHERE user_id = %s", (user_id,))
+        first_msg, last_msg = cur.fetchone()
+
+        cur.close()
+        conn.close()
+
+        days = (last_msg - first_msg).days + 1 if first_msg and last_msg else 1
+        avg = round(total / days, 1) if days > 0 else 0
+
+        text = (
+            f"📊 Твоя статистика с Лизой:\n\n"
+            f"💬 Всего сообщений: {total}\n"
+            f"🎤 Голосовых от тебя: {voice_sent}\n"
+            f"🔊 Голосовых от Лизы: {voice_replies}\n"
+            f"🔞 Нюдсов выпросил: {nudes}\n"
+            f"📅 Дней общения: {days}\n"
+            f"📈 В среднем: {avg} сообщ/день"
+        )
+    except Exception as e:
+        logger.error(f"Stats error: {e}", exc_info=True)
+        text = "Не смогла посчитать статистику 😔"
+
+    await update.message.reply_text(text)
 
 # ---------------------- MESSAGE HANDLER ----------------------
 async def transcribe_voice(file_path: str) -> str:
@@ -1214,6 +1255,7 @@ def main():
     application.add_handler(CommandHandler("writefirst", writefirst_cmd))
     application.add_handler(CommandHandler("mood", mood_cmd))
     application.add_handler(CommandHandler("clear_mood", clear_mood_cmd))
+    application.add_handler(CommandHandler("stats", stats_cmd))
 
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
