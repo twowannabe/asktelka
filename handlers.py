@@ -462,25 +462,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     is_reply = update.message.reply_to_message is not None
     is_reply_to_bot = is_reply and update.message.reply_to_message.from_user and update.message.reply_to_message.from_user.id == context.bot.id
 
-    # Voice-repeat: "озвучь это" в реплай на сообщение бота
-    if is_reply_to_bot and re.search(r"озвуч|голос|скажи это|произнеси|повтори голосом", text_lower):
-        original_text = update.message.reply_to_message.text or ""
-        if original_text.strip():
-            voice_data = await text_to_voice(original_text.strip())
-            if voice_data:
-                try:
-                    await context.bot.send_voice(
-                        chat_id=chat_id,
-                        voice=io.BytesIO(voice_data),
-                        reply_to_message_id=update.message.reply_to_message.message_id,
-                    )
-                except Exception as e:
-                    logger.error(f"Voice repeat error: {e}", exc_info=True)
-                    await update.message.reply_text("не смогла озвучить 😔")
-            else:
-                await update.message.reply_text("слишком длинное, не смогу озвучить 😅")
-            return
-
     should_gpt = False
     text_to_process = ""
     reply_to_message_id = update.message.message_id
