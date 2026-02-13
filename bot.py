@@ -92,7 +92,7 @@ client = AsyncOpenAI(api_key=XAI_API_KEY, base_url="https://api.x.ai/v1")
 groq_client = AsyncOpenAI(api_key=GROQ_API_KEY, base_url="https://api.groq.com/openai/v1")
 
 
-VOICE_SHORT_PHRASES = ["да", "нет", "не знаю"]
+VOICE_SHORT_PHRASES = ["да", "нет", "не знаю", "ахаха", "хаха", "да, ахаха", "нет, хаха", "не знаю, ахаха"]
 
 async def text_to_voice(text: str) -> bytes | None:
     """Convert text to voice using ElevenLabs TTS API. Returns OGG bytes or None."""
