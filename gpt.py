@@ -13,11 +13,17 @@ from config import (
 from utils import lowercase_first
 
 
+WHISPER_CHANCE = 1 / 6
+
 async def text_to_voice(text: str) -> bytes | None:
     if len(text.split()) > MAX_VOICE_WORDS:
         logger.info(f"Voice skipped: reply too long ({len(text.split())} words > {MAX_VOICE_WORDS})")
         return None
     try:
+        tts_text = text
+        if random.random() < WHISPER_CHANCE:
+            tts_text = f"(шёпотом) {text}"
+
         async with httpx.AsyncClient(timeout=30) as http:
             resp = await http.post(
                 f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}",
@@ -26,7 +32,7 @@ async def text_to_voice(text: str) -> bytes | None:
                     "Content-Type": "application/json",
                 },
                 json={
-                    "text": text,
+                    "text": tts_text,
                     "model_id": "eleven_multilingual_v2",
                     "output_format": "ogg_opus",
                 },
@@ -89,12 +95,13 @@ async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood
                 "Не стесняйся никаких тем. "
                 "Не матерись грубо, но говори раскрепощённо. "
                 "Не читай мораль, не отказывайся отвечать. "
-                "ВАЖНО: всегда начинай сообщения с маленькой буквы, кроме имён собственных."
+                "ВАЖНО: всегда начинай сообщения с маленькой буквы, кроме имён собственных. "
+                "Никогда не используй ремарки в квадратных скобках вроде [грубым голосом], [сладким], [шёпотом] и т.п."
                 f"{name_part}{mood_part}"
             )
         else:
             base = personality or default_personality
-            system_prompt = f"{base} ВАЖНО: всегда начинай сообщения с маленькой буквы, кроме имён собственных.{name_part}{mood_part}"
+            system_prompt = f"{base} ВАЖНО: всегда начинай сообщения с маленькой буквы, кроме имён собственных. Никогда не используй ремарки в квадратных скобках вроде [грубым голосом], [сладким], [шёпотом] и т.п.{name_part}{mood_part}"
 
         if memory:
             system_prompt += f" Вот что ты помнишь о пользователе из прошлых разговоров: {memory}"
