@@ -45,7 +45,7 @@ CHECK_LONELY_INTERVAL_SEC = 60 * 60 * 3
 
 DUMB_MODE = True
 MAX_WORDS = 50
-MAX_VOICE_WORDS = 15
+MAX_VOICE_WORDS = 30
 
 # ---------------------- TIMEZONE ----------------------
 LOCAL_TZ = pytz.timezone("Europe/Podgorica")

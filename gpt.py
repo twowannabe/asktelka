@@ -15,6 +15,7 @@ from utils import lowercase_first
 
 async def text_to_voice(text: str) -> bytes | None:
     if len(text.split()) > MAX_VOICE_WORDS:
+        logger.info(f"Voice skipped: reply too long ({len(text.split())} words > {MAX_VOICE_WORDS})")
         return None
     try:
         async with httpx.AsyncClient(timeout=30) as http:
