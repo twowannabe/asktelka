@@ -1,0 +1,14 @@
+[Unit]
+Description=Asktelka Telegram Bot
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+WorkingDirectory=/root/repos/asktelka
+ExecStart=/root/bots/bin/python3 bot.py
+Restart=always
+RestartSec=5
+EnvironmentFile=/root/repos/asktelka/.env
+
+[Install]
+WantedBy=multi-user.target

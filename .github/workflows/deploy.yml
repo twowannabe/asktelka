@@ -1,0 +1,22 @@
+name: Deploy to server
+
+on:
+  push:
+    branches:
+      - dev
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: 188.166.105.108
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /root/repos/asktelka
+            git pull origin dev
+            /root/bots/bin/pip install -r requirements.txt
+            systemctl restart asktelka
