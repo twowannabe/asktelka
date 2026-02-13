@@ -66,7 +66,7 @@ CHECKIN_PHOTO_CAPTIONS = [
     "это я сейчас 😏",
     "думала о тебе... держи 💋",
     "вот, смотри какая я сегодня 🔥",
-]
+]  # already lowercase
 
 DB_HOST = config("DB_HOST")
 DB_PORT = config("DB_PORT")
@@ -114,7 +114,7 @@ LEVEL_UP_MESSAGES = [
     "ты дорос до «{title}»! я горжусь тобой 😘",
     "уровень {level}! теперь ты мой {title} 🥰",
     "вау, {title}! ты знаешь, как завоевать девушку 😈",
-]
+]  # already lowercase
 
 # Level-based bonus thresholds
 LEVEL_VOICE_BOOST = 3       # from this level: +voice reply chance
@@ -197,13 +197,13 @@ NUDES_TEASE_REPLIES = [
     "может быть... если хорошо попросишь 😈",
     "ты думаешь я так легко сдамся? 😜",
     "ещё немножко поуговаривай 🙈",
-]
+]  # already lowercase
 NUDES_SEND_REPLIES = [
     "ладно, уговорил... вот тебе моё фото 🙈",
     "только для тебя... не показывай никому 😏",
     "ну раз так просишь... держи 🔥",
     "вот, смотри... но это между нами 😈",
-]
+]  # already lowercase
 
 default_personality = (
     "Ты Лиза — дерзкая, раскрепощённая, пошлая и развратная девушка. "
@@ -219,38 +219,38 @@ async def set_personality_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE
     user_id = update.effective_user.id
     personality = " ".join(context.args).strip()
     if not personality:
-        await update.message.reply_text("Напиши так: /set_personality <описание стиля>")
+        await update.message.reply_text("напиши так: /set_personality <описание стиля>")
         return
     user_personalities[user_id] = personality
     upsert_user_personality(user_id, personality)
-    await update.message.reply_text("Принято 💛 Теперь общаюсь в этом стиле.")
+    await update.message.reply_text("принято 💛 теперь общаюсь в этом стиле.")
 
 async def dontwritefirst_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     set_do_not_write_first(user_id, True)
-    await update.message.reply_text("Поняла 🫶 Теперь я не буду писать тебе первой.")
+    await update.message.reply_text("поняла 🫶 теперь я не буду писать тебе первой.")
 
 async def writefirst_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     set_do_not_write_first(user_id, False)
-    await update.message.reply_text("Хорошо 😊 Теперь могу иногда начинать разговор сама.")
+    await update.message.reply_text("хорошо 😊 теперь могу иногда начинать разговор сама.")
 
 async def mood_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     st = get_user_settings(user_id)
     if not st["mood_label"]:
-        await update.message.reply_text("Я пока ничего не запомнила про твоё настроение.")
+        await update.message.reply_text("я пока ничего не запомнила про твоё настроение.")
         return
     when = st["mood_updated_at"].astimezone(LOCAL_TZ).strftime("%Y-%m-%d %H:%M") if st["mood_updated_at"] else "не знаю когда"
     await update.message.reply_text(
-        f"Я запомнила: настроение **{st['mood_label']}** (обновляла: {when}).",
+        f"я запомнила: настроение **{st['mood_label']}** (обновляла: {when}).",
         parse_mode=ParseMode.MARKDOWN,
     )
 
 async def clear_mood_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     set_mood(user_id, None, "")
-    await update.message.reply_text("Окей. Я очистила память про настроение ✨")
+    await update.message.reply_text("окей. я очистила память про настроение ✨")
 
 async def level_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
@@ -266,9 +266,9 @@ async def level_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         needed = next_xp - [t for l, t, _ in LEVELS if l == level][0]
         pct = min(int(progress / needed * 10), 10) if needed > 0 else 10
         bar = "▓" * pct + "░" * (10 - pct)
-        next_line = f"До уровня {level + 1}: [{bar}] {xp}/{next_xp} XP"
+        next_line = f"до уровня {level + 1}: [{bar}] {xp}/{next_xp} XP"
     else:
-        next_line = "Максимальный уровень! 👑"
+        next_line = "максимальный уровень! 👑"
 
     streak_line = f"🔥 Стрик: {streak} дн." if streak >= 2 else ""
     streak_bonus = " (x1.5 XP)" if streak >= 2 else ""
@@ -294,7 +294,7 @@ async def disable_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         conn.close()
     except Exception as e:
         logger.error(f"DB disable chat error: {e}", exc_info=True)
-    await update.message.reply_text("Поняла. Я выключилась в этом чате.")
+    await update.message.reply_text("поняла. я выключилась в этом чате.")
 
 async def is_user_admin(update: Update) -> bool:
     try:
@@ -307,7 +307,7 @@ async def is_user_admin(update: Update) -> bool:
 async def reset_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     conversation_context[user_id] = []           # очищаем контекст GPT
-    await update.message.reply_text("Окей. Я сбросила историю разговора ✨")
+    await update.message.reply_text("окей. я сбросила историю разговора ✨")
         
 # ---------------------- DB HELPERS ----------------------
 # (Оставил без изменений, чтобы не трогать БД)
@@ -733,6 +733,12 @@ def escape_markdown_v2(text: str) -> str:
     escape_chars = r"_[]()~>#+-=|{}.!\\"
     return re.sub(f"([{re.escape(escape_chars)}])", r"\\\1", text)
 
+def lowercase_first(text: str) -> str:
+    """Lowercase the first letter of text, preserving the rest."""
+    if not text:
+        return text
+    return text[0].lower() + text[1:]
+
 def is_bot_enabled(chat_id: int) -> bool:
     return chat_id not in disabled_chats
 
@@ -778,6 +784,7 @@ async def generate_checkin_text(first_name: str, mood_label: str | None = None) 
         f"Напиши короткое (1-2 предложения) естественное сообщение пользователю.{name_ctx} "
         f"Сейчас {time_of_day}. Ты давно не общалась с этим человеком и хочешь узнать, как у него дела.{mood_ctx} "
         f"Не используй шаблонные фразы вроде 'как дела'. Будь живой, уникальной, как настоящая девушка в мессенджере. "
+        f"ВАЖНО: начинай сообщение с маленькой буквы, кроме имён собственных. "
         f"Пиши только текст сообщения, без кавычек."
     )
 
@@ -792,13 +799,13 @@ async def generate_checkin_text(first_name: str, mood_label: str | None = None) 
         )
         text = (response.choices[0].message.content or "").strip()
         if text:
-            return text
+            return lowercase_first(text)
     except Exception as e:
         logger.error(f"GPT checkin generation error: {e}")
 
     # Fallback if GPT fails
     name_part = f" {first_name}" if first_name else ""
-    return f"Привет{name_part} 💛 Давно не общались, как ты?"
+    return f"привет{name_part} 💛 давно не общались, как ты?"
 
 def list_ogg_files(folder: str) -> list[str]:
     if not os.path.isdir(folder):
@@ -872,35 +879,35 @@ def classify_mood(text: str) -> tuple[str | None, str]:
 # ---------------------- CHEAP REACTIONS (NO GPT) ----------------------
 CHEAP_REACTIONS = {
     "greeting": [
-        "Приветик 💛 Ты выглядишь так заманчиво сегодня 😏",
-        "Ой, привет 😊 Я уже скучала... по твоему вниманию ❤️",
-        "Привет! Я тут 🫶 Хочу услышать, что у тебя на уме 🔥",
+        "приветик 💛 ты выглядишь так заманчиво сегодня 😏",
+        "ой, привет 😊 я уже скучала... по твоему вниманию ❤️",
+        "привет! я тут 🫶 хочу услышать, что у тебя на уме 🔥",
     ],
     "thanks": [
-        "Пожалуйста 💛 А ты можешь отблагодарить поцелуем? 😘",
-        "Всегда пожалуйста 😊 Я люблю, когда ты говоришь 'спасибо' — это сексуально 😉",
-        "Я рядом 🫶 Может, обнимемся? 🫂",
+        "пожалуйста 💛 а ты можешь отблагодарить поцелуем? 😘",
+        "всегда пожалуйста 😊 я люблю, когда ты говоришь 'спасибо' — это сексуально 😉",
+        "я рядом 🫶 может, обнимемся? 🫂",
     ],
     "sad": [
-        "Ох… обниму тебя мысленно 🫂 и поцелую в щёчку. Расскажи, что случилось? 😘",
-        "Мне жаль, что тебе так… Я рядом. Давай я отвлеку тебя флиртом? 🔥",
+        "ох… обниму тебя мысленно 🫂 и поцелую в щёчку. расскажи, что случилось? 😘",
+        "мне жаль, что тебе так… я рядом. давай я отвлеку тебя флиртом? 🔥",
     ],
     "anxious": [
-        "Слушай… давай чуть-чуть медленно вдох–выдох? Я с тобой, и мои объятия теплые ❤️",
-        "Я рядом. Если хочешь, расскажи, что именно тревожит... или давай пофлиртуем, чтобы отвлечься 😉",
+        "слушай… давай чуть-чуть медленно вдох–выдох? я с тобой, и мои объятия теплые ❤️",
+        "я рядом. если хочешь, расскажи, что именно тревожит... или давай пофлиртуем, чтобы отвлечься 😉",
     ],
     "happy": [
-        "Ура 🥰 Я рада за тебя! Ты такой вдохновляющий, когда счастлив 🔥",
-        "Ой, кайф! Расскажешь подробнее? 😊 Я бы добавила комплимент 😏",
+        "ура 🥰 я рада за тебя! ты такой вдохновляющий, когда счастлив 🔥",
+        "ой, кайф! расскажешь подробнее? 😊 я бы добавила комплимент 😏",
     ],
-    "flirty": [  # Added for flirty reactions
-        "Ого, ты флиртуешь? Мне нравится 😘 Продолжай 🔥",
-        "Ты такой соблазнительный... Я готова ответить взаимностью ❤️",
+    "flirty": [
+        "ого, ты флиртуешь? мне нравится 😘 продолжай 🔥",
+        "ты такой соблазнительный... я готова ответить взаимностью ❤️",
     ],
     "fallback": [
-        "Я тебя слышу 💛 И хочу услышать больше... интимного 😉",
-        "Мм… понимаю 🫶 Ты меня заводишь своими словами 🔥",
-        "Я рядом. Может, пофлиртуем? 😏",
+        "я тебя слышу 💛 и хочу услышать больше... интимного 😉",
+        "мм… понимаю 🫶 ты меня заводишь своими словами 🔥",
+        "я рядом. может, пофлиртуем? 😏",
     ],
 }
 
@@ -940,12 +947,13 @@ async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood
                 "Коротко, живо, иногда пошло. "
                 "Не стесняйся никаких тем. "
                 "Не матерись грубо, но говори раскрепощённо. "
-                "Не читай мораль, не отказывайся отвечать."
+                "Не читай мораль, не отказывайся отвечать. "
+                "ВАЖНО: всегда начинай сообщения с маленькой буквы, кроме имён собственных."
                 f"{name_part}{mood_part}"
             )
         else:
             base = personality or default_personality
-            system_prompt = f"{base}{name_part}{mood_part}"
+            system_prompt = f"{base} ВАЖНО: всегда начинай сообщения с маленькой буквы, кроме имён собственных.{name_part}{mood_part}"
 
         # Sometimes ask to quote the user
         if random.random() < QUOTE_CHANCE and len(messages) >= 1:
@@ -982,6 +990,9 @@ async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood
             words = reply.split()
             reply = " ".join(words[:MAX_WORDS])
 
+        # Enforce lowercase first letter
+        reply = lowercase_first(reply)
+
         return reply
 
     except Exception as e:
@@ -991,15 +1002,15 @@ async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood
 # ---------------------- COMMANDS ----------------------
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
-        "Привет 💛 Я Лиза. Я тут, чтобы поддерживать тебя, флиртовать и иногда спрашивать, как ты. 😏\n"
-        "Если не хочешь, чтобы я писала первой — набери /dontwritefirst"
+        "привет 💛 я Лиза. я тут, чтобы поддерживать тебя, флиртовать и иногда спрашивать, как ты 😏\n"
+        "если не хочешь, чтобы я писала первой — набери /dontwritefirst"
     )
 
 # (Остальные команды без изменений, кроме /help, где добавил упоминание флирта)
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = (
-        "Команды:\n"
+        "команды:\n"
         "/start — начать\n"
         "/help — помощь\n"
         "/disable — выключить бота в этом чате\n"
@@ -1042,17 +1053,17 @@ async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         avg = round(total / days, 1) if days > 0 else 0
 
         text = (
-            f"📊 Твоя статистика с Лизой:\n\n"
-            f"💬 Всего сообщений: {total}\n"
-            f"🎤 Голосовых от тебя: {voice_sent}\n"
-            f"🔊 Голосовых от Лизы: {voice_replies}\n"
-            f"🔞 Нюдсов выпросил: {nudes}\n"
-            f"📅 Дней общения: {days}\n"
-            f"📈 В среднем: {avg} сообщ/день"
+            f"📊 твоя статистика с Лизой:\n\n"
+            f"💬 всего сообщений: {total}\n"
+            f"🎤 голосовых от тебя: {voice_sent}\n"
+            f"🔊 голосовых от Лизы: {voice_replies}\n"
+            f"🔞 нюдсов выпросил: {nudes}\n"
+            f"📅 дней общения: {days}\n"
+            f"📈 в среднем: {avg} сообщ/день"
         )
     except Exception as e:
         logger.error(f"Stats error: {e}", exc_info=True)
-        text = "Не смогла посчитать статистику 😔"
+        text = "не смогла посчитать статистику 😔"
 
     await update.message.reply_text(text)
 
@@ -1101,14 +1112,14 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         os.unlink(tmp_path)
 
         if not text:
-            await update.message.reply_text("Не расслышала, скажи ещё раз 🎧")
+            await update.message.reply_text("не расслышала, скажи ещё раз 🎧")
             return
 
         logger.info(f"Voice transcribed: {text[:100]}...")
 
     except Exception as e:
         logger.error(f"Voice transcription error: {e}", exc_info=True)
-        await update.message.reply_text("Не смогла разобрать голосовое 😔")
+        await update.message.reply_text("не смогла разобрать голосовое 😔")
         return
 
     # Update mood
@@ -1273,7 +1284,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             should_gpt = True
             text_to_process = original.strip()
         else:
-            await update.message.reply_text("Я не вижу текста в исходном сообщении 😔", reply_to_message_id=reply_to_message_id)
+            await update.message.reply_text("я не вижу текста в исходном сообщении 😔", reply_to_message_id=reply_to_message_id)
             return
 
     # 4) Random GPT (groups only)
@@ -1476,7 +1487,7 @@ MEDIA_REACTIONS = [
     "ого 😍", "красиво 🔥", "хаха класс 😂", "ничоси", "вау 😏",
     "это ты? 🙈", "мне нравится 💋", "круто", "ахаха 😂", "🔥🔥🔥",
     "ну ты даёшь 😈", "а мне?", "залипла 👀", "хочу такое",
-]
+]  # already lowercase
 MEDIA_REACTION_CHANCE = 1 / 4
 
 
@@ -1521,7 +1532,7 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
     logger.error("Exception while handling an update:", exc_info=context.error)
     if isinstance(update, Update) and update.message:
         try:
-            await update.message.reply_text("Ой… у меня что-то пошло не так 😅")
+            await update.message.reply_text("ой… у меня что-то пошло не так 😅")
         except Exception:
             pass
 
