@@ -1137,7 +1137,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     # Typing + delay
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
-    await asyncio.sleep(random.uniform(1, 4))
+    await asyncio.sleep(random.uniform(1, 2))
 
     reply = await ask_chatgpt(
         conversation_context[user_id],
