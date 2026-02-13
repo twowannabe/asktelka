@@ -14,6 +14,7 @@ Companion Telegram bot ("милая девушка") with:
 Tested conceptually for python-telegram-bot v20+ (async).
 """
 
+import io
 import os
 import re
 import random
@@ -23,6 +24,7 @@ import tempfile
 from collections import defaultdict
 from datetime import datetime, timezone
 
+import httpx
 import psycopg2
 from decouple import config
 from openai import AsyncOpenAI
@@ -44,6 +46,11 @@ from telegram.ext import (
 TELEGRAM_TOKEN = config("TELEGRAM_TOKEN")
 XAI_API_KEY = config("XAI_API_KEY")
 GROQ_API_KEY = config("GROQ_API_KEY")
+ELEVENLABS_API_KEY = config("ELEVENLABS_API_KEY")
+ELEVENLABS_VOICE_ID = config("ELEVENLABS_VOICE_ID")
+
+# Chance to reply with voice instead of text
+VOICE_REPLY_CHANCE = 1 / 5
 
 DB_HOST = config("DB_HOST")
 DB_PORT = config("DB_PORT")
@@ -83,6 +90,30 @@ client = AsyncOpenAI(api_key=XAI_API_KEY, base_url="https://api.x.ai/v1")
 
 # ---------------------- GROQ (WHISPER) ----------------------
 groq_client = AsyncOpenAI(api_key=GROQ_API_KEY, base_url="https://api.groq.com/openai/v1")
+
+
+async def text_to_voice(text: str) -> bytes | None:
+    """Convert text to voice using ElevenLabs TTS API. Returns OGG bytes or None."""
+    try:
+        async with httpx.AsyncClient(timeout=30) as http:
+            resp = await http.post(
+                f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}",
+                headers={
+                    "xi-api-key": ELEVENLABS_API_KEY,
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "text": text,
+                    "model_id": "eleven_multilingual_v2",
+                    "output_format": "ogg_opus",
+                },
+            )
+            if resp.status_code == 200:
+                return resp.content
+            logger.error(f"ElevenLabs error: {resp.status_code} {resp.text[:200]}")
+    except Exception as e:
+        logger.error(f"ElevenLabs TTS error: {e}", exc_info=True)
+    return None
 
 # ---------------------- LOGGING ----------------------
 logging.basicConfig(
@@ -831,15 +862,31 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     conversation_context[user_id] = conversation_context[user_id][-10:]
 
     reply_to_message_id = update.message.message_id
-    try:
-        if chat.type == "private":
-            await context.bot.send_message(chat_id=chat_id, text=reply)
-        else:
-            await update.message.reply_text(reply, reply_to_message_id=reply_to_message_id)
-    except Exception as e:
-        logger.error(f"Telegram send error: {e}", exc_info=True)
 
-    log_interaction(user_id, user_username, f"[voice] {text}", reply)
+    # On voice input — always try to reply with voice
+    sent_as_voice = False
+    voice_data = await text_to_voice(reply)
+    if voice_data:
+        try:
+
+            if chat.type == "private":
+                await context.bot.send_voice(chat_id=chat_id, voice=io.BytesIO(voice_data))
+            else:
+                await context.bot.send_voice(chat_id=chat_id, voice=io.BytesIO(voice_data), reply_to_message_id=reply_to_message_id)
+            sent_as_voice = True
+        except Exception as e:
+            logger.error(f"Voice send error: {e}", exc_info=True)
+
+    if not sent_as_voice:
+        try:
+            if chat.type == "private":
+                await context.bot.send_message(chat_id=chat_id, text=reply)
+            else:
+                await update.message.reply_text(reply, reply_to_message_id=reply_to_message_id)
+        except Exception as e:
+            logger.error(f"Telegram send error: {e}", exc_info=True)
+
+    log_interaction(user_id, user_username, f"[voice] {text}", f"{'[voice] ' if sent_as_voice else ''}{reply}")
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -971,26 +1018,40 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     })
     conversation_context[user_id] = conversation_context[user_id][-10:]
 
-    try:
-        if chat.type == "private":
-            # In DM: send as a regular message, like a real person
-            await context.bot.send_message(chat_id=chat_id, text=reply)
-        else:
-            # In groups: reply to the specific message
-            escaped = escape_markdown_v2(reply)
-            if len(escaped) > 4096:
-                escaped = escaped[:4096]
-            await update.message.reply_text(
-                escaped,
-                parse_mode=ParseMode.MARKDOWN_V2,
-                reply_to_message_id=reply_to_message_id,
-            )
-    except BadRequest:
-        await context.bot.send_message(chat_id=chat_id, text=reply)
-    except Exception as e:
-        logger.error(f"Telegram send error: {e}", exc_info=True)
+    # Randomly send as voice message
+    sent_as_voice = False
+    if random.random() < VOICE_REPLY_CHANCE:
+        voice_data = await text_to_voice(reply)
+        if voice_data:
+            try:
+    
+                if chat.type == "private":
+                    await context.bot.send_voice(chat_id=chat_id, voice=io.BytesIO(voice_data))
+                else:
+                    await context.bot.send_voice(chat_id=chat_id, voice=io.BytesIO(voice_data), reply_to_message_id=reply_to_message_id)
+                sent_as_voice = True
+            except Exception as e:
+                logger.error(f"Voice send error: {e}", exc_info=True)
 
-    log_interaction(user_id, user_username, text_to_process, reply)
+    if not sent_as_voice:
+        try:
+            if chat.type == "private":
+                await context.bot.send_message(chat_id=chat_id, text=reply)
+            else:
+                escaped = escape_markdown_v2(reply)
+                if len(escaped) > 4096:
+                    escaped = escaped[:4096]
+                await update.message.reply_text(
+                    escaped,
+                    parse_mode=ParseMode.MARKDOWN_V2,
+                    reply_to_message_id=reply_to_message_id,
+                )
+        except BadRequest:
+            await context.bot.send_message(chat_id=chat_id, text=reply)
+        except Exception as e:
+            logger.error(f"Telegram send error: {e}", exc_info=True)
+
+    log_interaction(user_id, user_username, text_to_process, f"{'[voice] ' if sent_as_voice else ''}{reply}")
 
 # ---------------------- DAILY CHECK-IN JOB ----------------------
 # (Оставил без изменений, кроме вызова pick_checkin_text, который уже флиртующий)
