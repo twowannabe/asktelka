@@ -1274,6 +1274,51 @@ async def check_lonely_users(context: CallbackContext) -> None:
         except Exception as e:
             logger.error(f"Check-in error for user {user_id}: {e}", exc_info=True)
 
+# ---------------------- MEDIA HANDLER ----------------------
+MEDIA_REACTIONS = [
+    "ого 😍", "красиво 🔥", "хаха класс 😂", "ничоси", "вау 😏",
+    "это ты? 🙈", "мне нравится 💋", "круто", "ахаха 😂", "🔥🔥🔥",
+    "ну ты даёшь 😈", "а мне?", "залипла 👀", "хочу такое",
+]
+MEDIA_REACTION_CHANCE = 1 / 4
+
+
+async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.message is None:
+        return
+
+    chat = update.effective_chat
+    user = update.effective_user
+    chat_id = chat.id
+
+    if chat.type != "private" and not is_bot_enabled(chat_id):
+        return
+
+    # In groups only react randomly, in DMs — always
+    if chat.type != "private" and random.random() > MEDIA_REACTION_CHANCE:
+        return
+
+    # Sometimes just emoji reaction instead of text
+    if random.random() < 0.4:
+        try:
+            from telegram import ReactionTypeEmoji
+            emoji = random.choice(REACTION_EMOJIS)
+            await update.message.set_reaction([ReactionTypeEmoji(emoji=emoji)])
+            return
+        except Exception:
+            pass
+
+    reply = random.choice(MEDIA_REACTIONS)
+    await asyncio.sleep(random.uniform(1, 3))
+    try:
+        if chat.type == "private":
+            await context.bot.send_message(chat_id=chat_id, text=reply)
+        else:
+            await update.message.reply_text(reply, reply_to_message_id=update.message.message_id)
+    except Exception as e:
+        logger.error(f"Media reaction error: {e}")
+
+
 # ---------------------- ERROR HANDLER ----------------------
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.error("Exception while handling an update:", exc_info=context.error)
@@ -1303,6 +1348,7 @@ def main():
 
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
+    application.add_handler(MessageHandler(filters.PHOTO | filters.Sticker.ALL | filters.VIDEO | filters.ANIMATION, handle_media))
     application.add_error_handler(error_handler)
 
     # Schedule periodic lonely-user checks
