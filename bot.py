@@ -29,7 +29,7 @@ import openai
 
 import pytz
 from telegram import Update
-from telegram.constants import ParseMode
+from telegram.constants import ChatAction, ParseMode
 from telegram.error import BadRequest, TelegramError
 from telegram.ext import (
     ApplicationBuilder,
@@ -849,6 +849,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     # Keep last 10 messages only
     conversation_context[user_id] = conversation_context[user_id][-10:]
+
+    # Typing indicator + human-like delay
+    await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+    await asyncio.sleep(random.uniform(1, 4))
 
     reply = await ask_chatgpt(
         conversation_context[user_id],
