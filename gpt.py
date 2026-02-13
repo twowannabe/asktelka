@@ -7,7 +7,7 @@ import httpx
 
 from config import (
     ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID,
-    MAX_VOICE_WORDS, MAX_WORDS, DUMB_MODE, QUOTE_CHANCE,
+    MAX_VOICE_WORDS, QUOTE_CHANCE,
     LEVEL_PERSONALITIES,
     client, groq_client, default_personality, logger,
 )
@@ -112,7 +112,7 @@ async def summarize_memory(old_summary: str, recent_messages: list[dict]) -> str
         return old_summary
 
 
-async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood_label: str = "", memory: str = "", dumb_mode: bool = DUMB_MODE, user_level: int = 7) -> str:
+async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood_label: str = "", memory: str = "", user_level: int = 7) -> str:
     try:
         name_part = ""
         if user_name and user_level >= 3:
@@ -172,10 +172,6 @@ async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood
 
         if not reply:
             return "эээ… я задумалась 😅"
-
-        if dumb_mode:
-            words = reply.split()
-            reply = " ".join(words[:MAX_WORDS])
 
         reply = lowercase_first(reply)
         return reply
