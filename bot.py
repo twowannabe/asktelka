@@ -92,7 +92,7 @@ client = AsyncOpenAI(api_key=XAI_API_KEY, base_url="https://api.x.ai/v1")
 groq_client = AsyncOpenAI(api_key=GROQ_API_KEY, base_url="https://api.groq.com/openai/v1")
 
 
-MAX_VOICE_WORDS = 5
+MAX_VOICE_WORDS = 15
 
 async def text_to_voice(text: str) -> bytes | None:
     """Convert text to voice using ElevenLabs TTS API. Returns OGG bytes or None.
