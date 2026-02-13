@@ -106,6 +106,15 @@ def init_db():
         cur.execute("ALTER TABLE user_state ADD COLUMN IF NOT EXISTS last_xp_date TEXT")
 
         cur.execute("""
+        CREATE TABLE IF NOT EXISTS user_achievements (
+            user_id BIGINT NOT NULL,
+            achievement_key TEXT NOT NULL,
+            earned_at TIMESTAMP DEFAULT NOW(),
+            PRIMARY KEY (user_id, achievement_key)
+        )
+        """)
+
+        cur.execute("""
         CREATE TABLE IF NOT EXISTS user_memory (
             user_id BIGINT PRIMARY KEY,
             summary TEXT DEFAULT '',
@@ -519,6 +528,38 @@ def increment_memory_counter(user_id: int) -> int:
     except Exception as e:
         logger.error(f"DB increment_memory_counter error: {e}", exc_info=True)
         return 0
+
+
+def get_user_achievements(user_id: int) -> list[str]:
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT achievement_key FROM user_achievements WHERE user_id=%s", (user_id,))
+        keys = [row[0] for row in cur.fetchall()]
+        cur.close()
+        conn.close()
+        return keys
+    except Exception as e:
+        logger.error(f"DB get_user_achievements error: {e}", exc_info=True)
+        return []
+
+
+def grant_achievement(user_id: int, key: str) -> bool:
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO user_achievements (user_id, achievement_key) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+            (user_id, key),
+        )
+        is_new = cur.rowcount > 0
+        conn.commit()
+        cur.close()
+        conn.close()
+        return is_new
+    except Exception as e:
+        logger.error(f"DB grant_achievement error: {e}", exc_info=True)
+        return False
 
 
 def get_last_contacts() -> list[tuple]:

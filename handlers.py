@@ -21,6 +21,7 @@ from config import (
     RANDOM_GPT_RESPONSE_CHANCE,
     XP_PER_TEXT, XP_PER_VOICE, XP_PER_NUDES,
     MEMORY_SUMMARIZE_EVERY,
+    ACHIEVEMENTS, ACHIEVEMENT_MESSAGES,
     disabled_chats, user_personalities, nudes_request_count, active_games,
     logger,
 )
@@ -31,12 +32,13 @@ from db import (
     set_do_not_write_first, get_user_settings, set_cheap_cooldown, set_mood,
     get_user_level_info, get_next_level_xp, add_xp, send_level_up, get_user_voice_chance,
     get_user_memory, save_user_memory, increment_memory_counter,
+    get_user_achievements, grant_achievement,
 )
 from gpt import ask_chatgpt, text_to_voice, transcribe_voice, summarize_memory
 from games import handle_game_response
 from utils import (
     escape_markdown_v2, lowercase_first, is_bot_enabled,
-    classify_mood, cheap_intent,
+    classify_mood, cheap_intent, local_now,
 )
 
 
@@ -73,7 +75,8 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/mood — показать, что я запомнила про твоё настроение\n"
         "/clear_mood — очистить память настроения\n"
         "/stats — статистика общения с Лизой\n"
-        "/level — твой уровень и XP\n\n"
+        "/level — твой уровень и XP\n"
+        "/achievements — твои ачивки\n\n"
         "🎮 мини-игры:\n"
         "/truth — правда или действие (+2 XP)\n"
         "/guess — угадай число 1-100 (+3 XP)\n"
@@ -229,6 +232,35 @@ async def reset_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("окей. я сбросила историю разговора ✨")
 
 
+# ---------------------- ACHIEVEMENTS ----------------------
+
+async def _send_achievement_notification(bot, chat_id: int, key: str):
+    ach = ACHIEVEMENTS[key]
+    msg = random.choice(ACHIEVEMENT_MESSAGES).format(title=ach["title"], emoji=ach["emoji"])
+    try:
+        await bot.send_message(chat_id=chat_id, text=msg)
+    except Exception as e:
+        logger.error(f"Achievement notification error: {e}")
+
+
+async def _check_and_grant(bot, chat_id: int, user_id: int, key: str):
+    if grant_achievement(user_id, key):
+        await _send_achievement_notification(bot, chat_id, key)
+
+
+async def achievements_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    earned = get_user_achievements(user_id)
+    lines = []
+    for key, ach in ACHIEVEMENTS.items():
+        if key in earned:
+            lines.append(f"✅ {ach['emoji']} {ach['title']} — {ach['desc']}")
+        else:
+            lines.append(f"⬜ {ach['emoji']} {ach['title']} — {ach['desc']}")
+    text = "🏆 твои ачивки:\n\n" + "\n".join(lines)
+    await update.message.reply_text(text)
+
+
 # ---------------------- MESSAGE HANDLERS ----------------------
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -247,6 +279,10 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     user_first_name = user.first_name or user_username or ""
     update_last_interaction(user_id, chat_id, user_first_name, user_username, chat.type)
     ensure_user_state_row(user_id)
+
+    # Achievement: night_owl
+    if 0 <= local_now().hour < 5:
+        await _check_and_grant(context.bot, chat_id, user_id, "night_owl")
 
     voice = update.message.voice or update.message.audio
     if not voice:
@@ -334,6 +370,10 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if leveled_up:
         await send_level_up(context.bot, chat_id, new_level, chat.type)
 
+    # Achievement: streak_7
+    if get_user_level_info(user_id)["streak_days"] >= 7:
+        await _check_and_grant(context.bot, chat_id, user_id, "streak_7")
+
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.message is None:
@@ -357,6 +397,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     update_last_interaction(user_id, chat_id, user_first_name, user_username, chat.type)
     ensure_user_state_row(user_id)
+
+    # Achievement: night_owl
+    if 0 <= local_now().hour < 5:
+        await _check_and_grant(context.bot, chat_id, user_id, "night_owl")
 
     mood_label, mood_note = classify_mood(text)
     if mood_label:
@@ -384,6 +428,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                         await context.bot.send_photo(chat_id=chat_id, photo=ph, caption=caption)
                     nudes_request_count[user_id] = 0
                     log_interaction(user_id, user_username, text, f"[nudes] {caption}")
+                    # Achievement: first_nudes
+                    await _check_and_grant(context.bot, chat_id, user_id, "first_nudes")
                     _, new_level, leveled_up = add_xp(user_id, XP_PER_NUDES)
                     if leveled_up:
                         await send_level_up(context.bot, chat_id, new_level, chat.type)
@@ -534,6 +580,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     _, new_level, leveled_up = add_xp(user_id, XP_PER_TEXT)
     if leveled_up:
         await send_level_up(context.bot, chat_id, new_level, chat.type)
+
+    # Achievement: msg_100
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM askgbt_logs WHERE user_id = %s", (user_id,))
+        msg_count = cur.fetchone()[0]
+        cur.close()
+        conn.close()
+        if msg_count >= 100:
+            await _check_and_grant(context.bot, chat_id, user_id, "msg_100")
+    except Exception as e:
+        logger.error(f"Achievement msg_100 check error: {e}", exc_info=True)
+
+    # Achievement: streak_7
+    if get_user_level_info(user_id)["streak_days"] >= 7:
+        await _check_and_grant(context.bot, chat_id, user_id, "streak_7")
 
 
 async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
