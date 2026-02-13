@@ -15,6 +15,36 @@ from utils import lowercase_first
 
 WHISPER_CHANCE = 1 / 6
 
+
+async def generate_chat_comment(buffer: list[str]) -> str:
+    system_prompt = (
+        "Ты Лиза — дерзкая, пошлая, развратная девушка. "
+        "Тебе показали переписку из группового чата. "
+        "Напиши короткий комментарий (до 15 слов) к разговору. "
+        "Комментируй естественно, не обращайся к конкретному человеку. "
+        "ВАЖНО: всегда начинай с маленькой буквы, кроме имён собственных. "
+        "Никогда не используй ремарки в квадратных скобках."
+    )
+    conversation = "\n".join(buffer)
+    try:
+        response = await asyncio.wait_for(
+            client.chat.completions.create(
+                model="grok-3-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": conversation},
+                ],
+            ),
+            timeout=30,
+        )
+        reply = (response.choices[0].message.content or "").strip()
+        if not reply:
+            return "ну вы даёте 😏"
+        return lowercase_first(reply)
+    except Exception as e:
+        logger.error(f"Group comment error: {e}", exc_info=True)
+        return "ну вы даёте 😏"
+
 async def text_to_voice(text: str) -> bytes | None:
     if len(text.split()) > MAX_VOICE_WORDS:
         logger.info(f"Voice skipped: reply too long ({len(text.split())} words > {MAX_VOICE_WORDS})")

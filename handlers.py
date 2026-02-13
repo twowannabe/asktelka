@@ -19,6 +19,7 @@ from config import (
     EMOJI_REACTION_CHANCE, REACTION_EMOJIS, CHEAP_REACTION_CHANCE, CHEAP_REACTIONS,
     MEDIA_REACTIONS, MEDIA_REACTION_CHANCE,
     RANDOM_GPT_RESPONSE_CHANCE,
+    GROUP_COMMENT_CHANCE, GROUP_COMMENT_BUFFER_SIZE, chat_message_buffer,
     XP_PER_TEXT, XP_PER_VOICE, XP_PER_NUDES,
     MEMORY_SUMMARIZE_EVERY,
     ACHIEVEMENTS, ACHIEVEMENT_MESSAGES,
@@ -34,7 +35,7 @@ from db import (
     get_user_memory, save_user_memory, increment_memory_counter,
     get_user_achievements, grant_achievement,
 )
-from gpt import ask_chatgpt, text_to_voice, transcribe_voice, summarize_memory
+from gpt import ask_chatgpt, text_to_voice, transcribe_voice, summarize_memory, generate_chat_comment
 from games import handle_game_response
 from utils import (
     escape_markdown_v2, lowercase_first, is_bot_enabled,
@@ -482,6 +483,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         text_to_process = text
 
     if not should_gpt:
+        # Group chat commentary buffer
+        buf = chat_message_buffer[chat_id]
+        buf.append(f"{user_first_name}: {text}")
+        if len(buf) > GROUP_COMMENT_BUFFER_SIZE:
+            del buf[: len(buf) - GROUP_COMMENT_BUFFER_SIZE]
+
+        if random.random() < GROUP_COMMENT_CHANCE:
+            try:
+                await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+                await asyncio.sleep(random.uniform(1, 3))
+                comment = await generate_chat_comment(list(buf))
+                if comment:
+                    await context.bot.send_message(chat_id=chat_id, text=comment)
+                    buf.clear()
+                    return
+            except Exception as e:
+                logger.error(f"Group comment send error: {e}", exc_info=True)
+
         if random.random() < EMOJI_REACTION_CHANCE:
             emoji = random.choice(REACTION_EMOJIS)
             try:
