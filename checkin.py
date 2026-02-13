@@ -15,6 +15,7 @@ from config import (
 from db import (
     get_last_contacts, get_user_settings,
     set_last_checkin_date, update_last_interaction,
+    get_user_memory,
 )
 from utils import (
     local_now, local_date_str, start_of_local_day,
@@ -22,7 +23,7 @@ from utils import (
 )
 
 
-async def generate_checkin_text(first_name: str, mood_label: str | None = None) -> str:
+async def generate_checkin_text(first_name: str, mood_label: str | None = None, user_id: int | None = None) -> str:
     now = local_now()
     if is_morning(now):
         time_of_day = "утро"
@@ -35,12 +36,18 @@ async def generate_checkin_text(first_name: str, mood_label: str | None = None) 
     if mood_label:
         mood_ctx = f" Последнее известное настроение пользователя: {mood_label}. Учти это мягко, не акцентируй."
 
+    memory_ctx = ""
+    if user_id:
+        memory = get_user_memory(user_id)
+        if memory:
+            memory_ctx = f" Вот что ты помнишь о пользователе из прошлых разговоров: {memory}"
+
     name_ctx = f" Пользователя зовут {first_name}. Обращайся по имени." if first_name else ""
 
     prompt = (
         f"Ты Лиза — тёплая, заботливая девушка с лёгким флиртом. "
         f"Напиши короткое (1-2 предложения) естественное сообщение пользователю.{name_ctx} "
-        f"Сейчас {time_of_day}. Ты давно не общалась с этим человеком и хочешь узнать, как у него дела.{mood_ctx} "
+        f"Сейчас {time_of_day}. Ты давно не общалась с этим человеком и хочешь узнать, как у него дела.{mood_ctx}{memory_ctx} "
         f"Не используй шаблонные фразы вроде 'как дела'. Будь живой, уникальной, как настоящая девушка в мессенджере. "
         f"ВАЖНО: начинай сообщение с маленькой буквы, кроме имён собственных. "
         f"Пиши только текст сообщения, без кавычек."
@@ -126,7 +133,7 @@ async def check_lonely_users(context: CallbackContext) -> None:
                     await context.bot.send_photo(chat_id=int(chat_id), photo=ph, caption=caption)
             else:
                 mood_label = st.get("mood_label")
-                text = await generate_checkin_text(first_name=first_name, mood_label=mood_label)
+                text = await generate_checkin_text(first_name=first_name, mood_label=mood_label, user_id=int(user_id))
 
                 if chat_type != "private" and username:
                     text = f"@{username}, {text[0].lower()}{text[1:]}"

@@ -47,7 +47,29 @@ async def transcribe_voice(file_path: str) -> str:
     return response.text.strip()
 
 
-async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood_label: str = "", dumb_mode: bool = DUMB_MODE) -> str:
+async def summarize_memory(old_summary: str, recent_messages: list[dict]) -> str:
+    formatted = "\n".join(f"{m['role']}: {m['content']}" for m in recent_messages)
+    prompt = (
+        f"Вот предыдущее резюме о пользователе: {old_summary}\n\n"
+        f"Вот новые сообщения:\n{formatted}\n\n"
+        f"Обнови резюме: ключевые факты о пользователе (имя, интересы, темы, привычки, важные события). "
+        f"Максимум 200 слов. Пиши от третьего лица."
+    )
+    try:
+        response = await asyncio.wait_for(
+            client.chat.completions.create(
+                model="grok-3-mini",
+                messages=[{"role": "user", "content": prompt}],
+            ),
+            timeout=30,
+        )
+        return (response.choices[0].message.content or "").strip()
+    except Exception as e:
+        logger.error(f"Memory summarization error: {e}", exc_info=True)
+        return old_summary
+
+
+async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood_label: str = "", memory: str = "", dumb_mode: bool = DUMB_MODE) -> str:
     try:
         name_part = (
             f" Пользователя зовут {user_name}. "
@@ -72,6 +94,9 @@ async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood
         else:
             base = personality or default_personality
             system_prompt = f"{base} ВАЖНО: всегда начинай сообщения с маленькой буквы, кроме имён собственных.{name_part}{mood_part}"
+
+        if memory:
+            system_prompt += f" Вот что ты помнишь о пользователе из прошлых разговоров: {memory}"
 
         if random.random() < QUOTE_CHANCE and len(messages) >= 1:
             last_user_msg = next((m["content"] for m in reversed(messages) if m["role"] == "user"), None)

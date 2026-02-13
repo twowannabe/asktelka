@@ -105,6 +105,15 @@ def init_db():
         cur.execute("ALTER TABLE user_state ADD COLUMN IF NOT EXISTS streak_days INTEGER DEFAULT 0")
         cur.execute("ALTER TABLE user_state ADD COLUMN IF NOT EXISTS last_xp_date TEXT")
 
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS user_memory (
+            user_id BIGINT PRIMARY KEY,
+            summary TEXT DEFAULT '',
+            message_count INTEGER DEFAULT 0,
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+        """)
+
         conn.commit()
         cur.close()
         conn.close()
@@ -456,6 +465,60 @@ def get_user_voice_chance(user_id: int) -> float:
     if info["level"] >= LEVEL_VOICE_BOOST:
         return VOICE_REPLY_CHANCE * 1.5
     return VOICE_REPLY_CHANCE
+
+
+def get_user_memory(user_id: int) -> str:
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT summary FROM user_memory WHERE user_id=%s", (user_id,))
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        return row[0] if row else ""
+    except Exception as e:
+        logger.error(f"DB get_user_memory error: {e}", exc_info=True)
+        return ""
+
+
+def save_user_memory(user_id: int, summary: str):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO user_memory (user_id, summary, message_count, updated_at)
+            VALUES (%s, %s, 0, NOW())
+            ON CONFLICT (user_id) DO UPDATE SET
+                summary = EXCLUDED.summary,
+                message_count = 0,
+                updated_at = NOW()
+        """, (user_id, summary))
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        logger.error(f"DB save_user_memory error: {e}", exc_info=True)
+
+
+def increment_memory_counter(user_id: int) -> int:
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO user_memory (user_id, message_count)
+            VALUES (%s, 1)
+            ON CONFLICT (user_id) DO UPDATE SET
+                message_count = user_memory.message_count + 1
+            RETURNING message_count
+        """, (user_id,))
+        count = cur.fetchone()[0]
+        conn.commit()
+        cur.close()
+        conn.close()
+        return count
+    except Exception as e:
+        logger.error(f"DB increment_memory_counter error: {e}", exc_info=True)
+        return 0
 
 
 def get_last_contacts() -> list[tuple]:

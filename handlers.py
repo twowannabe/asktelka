@@ -20,6 +20,7 @@ from config import (
     MEDIA_REACTIONS, MEDIA_REACTION_CHANCE,
     RANDOM_GPT_RESPONSE_CHANCE,
     XP_PER_TEXT, XP_PER_VOICE, XP_PER_NUDES,
+    MEMORY_SUMMARIZE_EVERY,
     disabled_chats, user_personalities, nudes_request_count, active_games,
     logger,
 )
@@ -29,13 +30,25 @@ from db import (
     update_last_interaction, ensure_user_state_row,
     set_do_not_write_first, get_user_settings, set_cheap_cooldown, set_mood,
     get_user_level_info, get_next_level_xp, add_xp, send_level_up, get_user_voice_chance,
+    get_user_memory, save_user_memory, increment_memory_counter,
 )
-from gpt import ask_chatgpt, text_to_voice, transcribe_voice
+from gpt import ask_chatgpt, text_to_voice, transcribe_voice, summarize_memory
 from games import handle_game_response
 from utils import (
     escape_markdown_v2, lowercase_first, is_bot_enabled,
     classify_mood, cheap_intent,
 )
+
+
+async def _update_memory(user_id: int):
+    try:
+        old_summary = get_user_memory(user_id)
+        messages = load_context(user_id, limit=30)
+        new_summary = await summarize_memory(old_summary, messages)
+        save_user_memory(user_id, new_summary)
+        logger.info(f"Memory updated for user {user_id}: {new_summary[:80]}...")
+    except Exception as e:
+        logger.error(f"Memory update error for user {user_id}: {e}", exc_info=True)
 
 
 # ---------------------- COMMAND HANDLERS ----------------------
@@ -268,6 +281,12 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     user_mood = st.get("mood_label") or ""
 
     save_message(user_id, "user", text)
+
+    count = increment_memory_counter(user_id)
+    if count >= MEMORY_SUMMARIZE_EVERY:
+        asyncio.create_task(_update_memory(user_id))
+
+    memory = get_user_memory(user_id)
     messages = load_context(user_id, limit=10)
 
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
@@ -278,6 +297,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         user_name=user_first_name,
         personality=personality,
         mood_label=user_mood,
+        memory=memory,
     )
 
     if not reply.strip():
@@ -453,6 +473,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_mood = st.get("mood_label") or ""
 
     save_message(user_id, "user", text_to_process)
+
+    count = increment_memory_counter(user_id)
+    if count >= MEMORY_SUMMARIZE_EVERY:
+        asyncio.create_task(_update_memory(user_id))
+
+    memory = get_user_memory(user_id)
     messages = load_context(user_id, limit=10)
 
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
@@ -463,6 +489,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         user_name=user_first_name,
         personality=personality,
         mood_label=user_mood,
+        memory=memory,
     )
 
     if not reply.strip():
