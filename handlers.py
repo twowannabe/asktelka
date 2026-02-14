@@ -340,10 +340,12 @@ async def profile_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         })
         url = f"{WEBAPP_URL}?{params}"
 
-        from telegram import WebAppInfo
-        keyboard = InlineKeyboardMarkup([[
-            InlineKeyboardButton("открыть профиль 💛", web_app=WebAppInfo(url=url))
-        ]])
+        from telegram import KeyboardButton, ReplyKeyboardMarkup, WebAppInfo
+        keyboard = ReplyKeyboardMarkup(
+            [[KeyboardButton("открыть профиль 💛", web_app=WebAppInfo(url=url))]],
+            resize_keyboard=True,
+            one_time_keyboard=True,
+        )
         await update.message.reply_text("нажми, чтобы открыть профиль 👇", reply_markup=keyboard)
     else:
         # Fallback: text response (like /level + /achievements)
