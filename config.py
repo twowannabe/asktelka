@@ -323,6 +323,15 @@ SELFIE_LORA_MODEL = "twowannabe/sweeny:da0b32fc460b94bcf684e2445e21ba82132700b2d
 SVD_MODEL_VERSION = "3f0457e4619daac51203dedb472816fd4af51f3149fa7a9e0b5ffcf1b8172438"
 SVD_MOTION_BUCKET_ID = 127
 SVD_FRAMES_PER_SECOND = 6
+VIDEO_NOTE_KEYWORDS = [
+    "кружочек", "кружочк", "кружок", "круж",
+    "запиши видео", "запиши кружок", "запиши кружочек",
+    "сними кружочек", "сними кружок",
+    "скинь кружочек", "скинь кружок",
+    "пришли кружочек", "пришли кружок",
+    "хочу кружочек", "хочу кружок",
+    "видеокружок", "видео кружок",
+]
 SELFIE_CHANCE = 0.03
 VIDEO_NOTE_CHANCE = 1 / 30
 SELFIE_CAPTIONS = [
