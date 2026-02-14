@@ -31,7 +31,7 @@ from checkin import check_lonely_users, update_lisa_mood, send_ritual, send_lisa
 
 
 def main():
-    application = ApplicationBuilder().token(TELEGRAM_TOKEN).read_timeout(60).build()
+    application = ApplicationBuilder().token(TELEGRAM_TOKEN).read_timeout(60).concurrent_updates(True).build()
 
     init_db()
 
