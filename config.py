@@ -163,7 +163,7 @@ NUDES_GEN_CAPTIONS = [
     "надеюсь тебе понравится 💋",
 ]
 NUDES_GEN_BASE_PROMPT = (
-    "A full body or half body photo of LISA_FACE, young woman, nude, "
+    "A full body or half body photo of SWEENY_FACE, young woman, nude, "
     "third person view, not a selfie, taken by someone else, "
     "amateur homemade photo, smartphone camera, slightly grainy, "
     "natural lighting, candid intimate moment, sensual pose, "
@@ -316,10 +316,10 @@ LISA_MOOD_TIME_WEIGHTS = {
 }
 
 SELFIE_BASE_PROMPT = (
-    "A selfie photo of LISA_FACE, smartphone camera, front-facing selfie perspective, "
+    "A selfie photo of SWEENY_FACE, smartphone camera, front-facing selfie perspective, "
     "natural lighting, casual style, cute face with a slight smirk."
 )
-SELFIE_LORA_MODEL = "twowannabe/liza:8ff0d68b4e24d14a4bfd219ef763b9d015c2eff109d893fc5e8b19a448c847aa"
+SELFIE_LORA_MODEL = "twowannabe/sweeny:da0b32fc"
 SELFIE_CHANCE = 0.03
 VIDEO_NOTE_CHANCE = 1 / 30
 SELFIE_CAPTIONS = [
