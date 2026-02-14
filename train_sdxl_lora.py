@@ -81,7 +81,7 @@ def main():
             owner=owner,
             name=model_name,
             visibility="private",
-            hardware="gpu-t4-nano",
+            hardware="gpu-t4",
         )
         print(f"Model created: {DESTINATION}")
 
