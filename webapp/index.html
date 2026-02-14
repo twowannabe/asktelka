@@ -406,85 +406,79 @@ for (const [key, ach] of Object.entries(ACHIEVEMENTS)) {
   grid.appendChild(div);
 }
 
-// Settings: prefill
-document.getElementById("custom-name").value = customName;
-document.getElementById("toggle-dnwf").checked = dnwf;
-document.getElementById("toggle-voice").checked = voiceOn;
-
-// Determine current personality style
-let currentStyle = "preset:flirty";
 const styleOptions = document.querySelectorAll(".style-option");
 const customBlock = document.getElementById("custom-personality");
 const customText = document.getElementById("custom-personality-text");
+const dbg = document.getElementById("debug-info");
 
-if (personality) {
-  // Check if it matches any preset text (exact or key)
-  let matched = false;
-  // The personality field from the backend is the full text, not the key.
-  // We just default to flirty if no custom was set.
-  // If personality doesn't match presets, treat as custom.
-  const PRESET_TEXTS = {
-    "preset:flirty": true,
-    "preset:tender": true,
-    "preset:bestie": true,
-  };
-  // Simple heuristic: if the personality text is long or doesn't match known patterns, it's custom
-  const lc = personality.toLowerCase();
-  if (lc.includes("дерзкая") && lc.includes("пошлая")) {
-    currentStyle = "preset:flirty";
-  } else if (lc.includes("нежная") || lc.includes("романтичная")) {
-    currentStyle = "preset:tender";
-  } else if (lc.includes("подруга") && !lc.includes("пошлая")) {
-    currentStyle = "preset:bestie";
-  } else if (personality.trim()) {
-    currentStyle = "custom";
-    customText.value = personality;
+function applySettings(s) {
+  document.getElementById("custom-name").value = s.custom_name || "";
+  document.getElementById("toggle-dnwf").checked = !!s.do_not_write_first;
+  document.getElementById("toggle-voice").checked = s.voice_enabled !== false;
+
+  // Determine style
+  let style = "preset:flirty";
+  const p = (s.personality || "").toLowerCase();
+  if (p.startsWith("preset:") || p.startsWith("custom:")) {
+    // Already in our format (from CloudStorage)
+    style = s.personality;
+    if (style === "custom" || style.startsWith("custom:")) {
+      style = "custom";
+      customText.value = s.personality.replace(/^custom:/, "");
+    }
+  } else if (p) {
+    // Full text from DB — heuristic match
+    if (p.includes("дерзкая") && p.includes("пошлая")) style = "preset:flirty";
+    else if (p.includes("нежная") || p.includes("романтичная")) style = "preset:tender";
+    else if (p.includes("подруга") && !p.includes("пошлая")) style = "preset:bestie";
+    else { style = "custom"; customText.value = s.personality; }
   }
+
+  styleOptions.forEach(opt => opt.classList.toggle("active", opt.dataset.value === style));
+  customBlock.classList.toggle("visible", style === "custom");
 }
 
-// Set active style
-styleOptions.forEach(opt => {
-  opt.classList.toggle("active", opt.dataset.value === currentStyle);
+// Default: apply from URL params
+applySettings({
+  custom_name: customName,
+  do_not_write_first: dnwf,
+  voice_enabled: voiceOn,
+  personality: personality,
 });
-if (currentStyle === "custom") {
-  customBlock.classList.add("visible");
-}
+
+// Override with CloudStorage if available (cached from previous save)
+try {
+  Telegram.WebApp.CloudStorage.getItem("profile_settings", function(err, val) {
+    if (!err && val) {
+      try {
+        const cached = JSON.parse(val);
+        applySettings(cached);
+        dbg.textContent = "loaded cached settings";
+      } catch(e) {}
+    }
+  });
+} catch(e) {}
 
 // Style option click handlers
 styleOptions.forEach(opt => {
   opt.addEventListener("click", () => {
     styleOptions.forEach(o => o.classList.remove("active"));
     opt.classList.add("active");
-    if (opt.dataset.value === "custom") {
-      customBlock.classList.add("visible");
-    } else {
-      customBlock.classList.remove("visible");
-    }
+    customBlock.classList.toggle("visible", opt.dataset.value === "custom");
   });
 });
 
-// Debug info
-const dbg = document.getElementById("debug-info");
-const tgApp = window.Telegram && Telegram.WebApp;
-if (tgApp) {
-  dbg.textContent = "initData: " + (tgApp.initData ? "yes" : "no") +
-    " | sendData: " + (typeof tgApp.sendData) +
-    " | platform: " + (tgApp.platform || "?");
-} else {
-  dbg.textContent = "Telegram.WebApp not available";
-}
-
 function collectData() {
   const activeStyle = document.querySelector(".style-option.active");
-  let personalityValue = activeStyle ? activeStyle.dataset.value : "preset:flirty";
-  if (personalityValue === "custom") {
-    personalityValue = "custom:" + (customText.value || "").trim();
+  let pv = activeStyle ? activeStyle.dataset.value : "preset:flirty";
+  if (pv === "custom") {
+    pv = "custom:" + (customText.value || "").trim();
   }
   return {
     custom_name: document.getElementById("custom-name").value.trim(),
     do_not_write_first: document.getElementById("toggle-dnwf").checked,
     voice_enabled: document.getElementById("toggle-voice").checked,
-    personality: personalityValue,
+    personality: pv,
   };
 }
 
@@ -498,18 +492,26 @@ try {
   Telegram.WebApp.ready();
   Telegram.WebApp.expand();
 
-  // Use native MainButton for save
   Telegram.WebApp.MainButton.setText("Сохранить");
   Telegram.WebApp.MainButton.show();
   Telegram.WebApp.MainButton.onClick(() => {
     const data = collectData();
     const json = JSON.stringify(data);
-    dbg.textContent = "sending: " + json.substring(0, 80) + "...";
+
+    // Cache in CloudStorage so next open shows fresh data
+    try {
+      Telegram.WebApp.CloudStorage.setItem("profile_settings", json);
+    } catch(e) {}
+
+    // Send to bot
     try {
       Telegram.WebApp.sendData(json);
-    } catch(e) {
-      dbg.textContent = "sendData error: " + e.message;
-    }
+    } catch(e) {}
+
+    // Close webapp (sendData should close it, but just in case)
+    setTimeout(() => {
+      try { Telegram.WebApp.close(); } catch(e) {}
+    }, 300);
   });
 } catch(e) {
   dbg.textContent = "init error: " + e.message;

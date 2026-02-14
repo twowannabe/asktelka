@@ -419,7 +419,7 @@ async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
         upsert_user_personality(user_id, personality_text)
     # if empty, don't clear — keep existing
 
-    await update.effective_message.reply_text("сохранила настройки 💛")
+    await update.effective_message.reply_text("данные обновлены! 💛")
 
 
 # ---------------------- TOP ----------------------
