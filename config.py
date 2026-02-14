@@ -24,6 +24,7 @@ XAI_API_KEY = config("XAI_API_KEY")
 GROQ_API_KEY = config("GROQ_API_KEY")
 ELEVENLABS_API_KEY = config("ELEVENLABS_API_KEY")
 ELEVENLABS_VOICE_ID = config("ELEVENLABS_VOICE_ID")
+REPLICATE_API_TOKEN = config("REPLICATE_API_TOKEN", default="")
 
 # ---------------------- DB ----------------------
 DB_HOST = config("DB_HOST")
@@ -301,11 +302,10 @@ LISA_MOOD_TIME_WEIGHTS = {
 }
 
 SELFIE_BASE_PROMPT = (
-    "A selfie photo of a young Eastern European woman in her early 20s, "
-    "slim build, long dark brown hair, brown eyes, light skin, natural makeup, "
-    "cute face with a slight smirk. Smartphone camera, front-facing selfie perspective, "
-    "natural lighting, casual style."
+    "A selfie photo of LISA_FACE, smartphone camera, front-facing selfie perspective, "
+    "natural lighting, casual style, cute face with a slight smirk."
 )
+SELFIE_LORA_MODEL = "twowannabe/liza:8ff0d68b"
 SELFIE_CHANCE = 0.03
 VIDEO_NOTE_CHANCE = 1 / 30
 SELFIE_CAPTIONS = [

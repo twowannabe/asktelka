@@ -7,8 +7,9 @@ import httpx
 
 from config import (
     ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID,
+    REPLICATE_API_TOKEN,
     MAX_VOICE_WORDS, QUOTE_CHANCE,
-    LEVEL_PERSONALITIES, SELFIE_BASE_PROMPT,
+    LEVEL_PERSONALITIES, SELFIE_BASE_PROMPT, SELFIE_LORA_MODEL,
     client, groq_client, default_personality, logger,
 )
 from base64 import b64encode, b64decode
@@ -231,17 +232,52 @@ async def generate_selfie(prompt_hint: str = "") -> bytes | None:
     if prompt_hint:
         prompt += f" {prompt_hint.strip()}"
     try:
-        response = await asyncio.wait_for(
-            client.images.generate(
-                model="grok-2-image",
-                prompt=prompt,
-                response_format="b64_json",
-            ),
-            timeout=60,
-        )
-        b64_data = response.data[0].b64_json
-        if b64_data:
-            return b64decode(b64_data)
+        async with httpx.AsyncClient(timeout=120) as http:
+            resp = await http.post(
+                "https://api.replicate.com/v1/predictions",
+                headers={
+                    "Authorization": f"Bearer {REPLICATE_API_TOKEN}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "version": SELFIE_LORA_MODEL.split(":")[1],
+                    "input": {
+                        "prompt": prompt,
+                        "num_outputs": 1,
+                        "guidance_scale": 3.5,
+                        "num_inference_steps": 28,
+                        "output_format": "jpg",
+                    },
+                },
+            )
+            if resp.status_code not in (200, 201):
+                logger.error(f"Replicate create error: {resp.status_code} {resp.text[:200]}")
+                return None
+
+            prediction = resp.json()
+            poll_url = prediction.get("urls", {}).get("get") or f"https://api.replicate.com/v1/predictions/{prediction['id']}"
+
+            for _ in range(60):
+                await asyncio.sleep(2)
+                poll = await http.get(
+                    poll_url,
+                    headers={"Authorization": f"Bearer {REPLICATE_API_TOKEN}"},
+                )
+                data = poll.json()
+                status = data.get("status")
+                if status == "succeeded":
+                    output = data.get("output")
+                    if output:
+                        image_url = output[0] if isinstance(output, list) else output
+                        img_resp = await http.get(image_url)
+                        if img_resp.status_code == 200:
+                            return img_resp.content
+                    return None
+                elif status in ("failed", "canceled"):
+                    logger.error(f"Replicate prediction failed: {data.get('error')}")
+                    return None
+
+            logger.error("Replicate prediction timed out")
     except Exception as e:
         logger.error(f"Selfie generation error: {e}", exc_info=True)
     return None
