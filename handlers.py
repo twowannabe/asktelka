@@ -95,6 +95,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/nudes [описание] — фото от Лизы 🔞\n"
         "/circle — кружочек от Лизы 🎥\n"
         "/horoscope [знак] — гороскоп от Лизы 🔮\n"
+        "/voice [--стиль] текст — Лиза зачитает текст 🎙\n"
         "/diary — дневник отношений с Лизой 📖\n"
         "/mood_lisa — узнать настроение Лизы\n\n"
         "🎮 мини-игры:\n"
@@ -384,6 +385,71 @@ async def circle_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     log_interaction(user_id, update.effective_user.username or "", "/circle", f"[video_note] {caption}")
 
     _, new_level, leveled_up = add_xp(user_id, XP_PER_VIDEO_NOTE)
+    if leveled_up:
+        await send_level_up(context.bot, chat_id, new_level, update.effective_chat.type)
+
+
+# ---------------------- VOICE CMD ----------------------
+
+VOICE_STYLE_MAP = {
+    "--шёпот": "whisper", "--шепот": "whisper", "--whisper": "whisper",
+    "--стон": "moan", "--moan": "moan",
+}
+
+async def voice_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+
+    user_level_info = await run_sync(get_user_level_info, user_id)
+    user_level = user_level_info["level"]
+
+    if user_level < LEVEL_VOICE_UNLOCK:
+        await update.message.reply_text(
+            f"голосовые доступны с уровня {LEVEL_VOICE_UNLOCK} 😏 пока пообщаемся?"
+        )
+        return
+
+    args = context.args or []
+    if not args:
+        styles = ", ".join(sorted(set(VOICE_STYLE_MAP.keys())))
+        await update.message.reply_text(
+            f"напиши так: /voice [стиль] текст\n\nстили: {styles}\n\nбез стиля — обычный голос"
+        )
+        return
+
+    style = "normal"
+    if args[0].lower() in VOICE_STYLE_MAP:
+        style = VOICE_STYLE_MAP[args[0].lower()]
+        text_to_speak = " ".join(args[1:]).strip()
+    else:
+        text_to_speak = " ".join(args).strip()
+
+    if not text_to_speak:
+        await update.message.reply_text("а что сказать-то? 😏")
+        return
+
+    await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_VOICE)
+    voice_data = await text_to_voice(text_to_speak, style=style)
+
+    if not voice_data:
+        await update.message.reply_text("не получилось записать голосовое 😔 попробуй позже")
+        return
+
+    duration = int(get_ogg_duration(voice_data)) or None
+    voice_file = io.BytesIO(voice_data)
+    voice_file.name = "voice.ogg"
+
+    try:
+        await context.bot.send_voice(chat_id=chat_id, voice=voice_file, duration=duration)
+    except Exception as e:
+        logger.error(f"Voice cmd send error: {e}", exc_info=True)
+        await update.message.reply_text("не смогла отправить голосовое 😔")
+        return
+
+    await run_sync(log_interaction, user_id, update.effective_user.username or "",
+                   f"/voice [{style}] {text_to_speak}", f"[voice] {text_to_speak}")
+
+    _, new_level, leveled_up = await run_sync(add_xp, user_id, XP_PER_VOICE)
     if leveled_up:
         await send_level_up(context.bot, chat_id, new_level, update.effective_chat.type)
 
