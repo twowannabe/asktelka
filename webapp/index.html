@@ -438,26 +438,27 @@ function applySettings(s) {
   customBlock.classList.toggle("visible", style === "custom");
 }
 
-// Default: apply from URL params
-applySettings({
-  custom_name: customName,
-  do_not_write_first: dnwf,
-  voice_enabled: voiceOn,
-  personality: personality,
-});
-
-// Override with CloudStorage if available (cached from previous save)
+// Load settings: localStorage (cached) → URL params (from bot)
+let loaded = false;
 try {
-  Telegram.WebApp.CloudStorage.getItem("profile_settings", function(err, val) {
-    if (!err && val) {
-      try {
-        const cached = JSON.parse(val);
-        applySettings(cached);
-        dbg.textContent = "loaded cached settings";
-      } catch(e) {}
-    }
-  });
+  const raw = localStorage.getItem("profile_settings");
+  if (raw) {
+    const cached = JSON.parse(raw);
+    applySettings(cached);
+    loaded = true;
+    dbg.textContent = "loaded from cache";
+  }
 } catch(e) {}
+
+if (!loaded) {
+  applySettings({
+    custom_name: customName,
+    do_not_write_first: dnwf,
+    voice_enabled: voiceOn,
+    personality: personality,
+  });
+  dbg.textContent = "loaded from url params";
+}
 
 // Style option click handlers
 styleOptions.forEach(opt => {
@@ -498,17 +499,13 @@ try {
     const data = collectData();
     const json = JSON.stringify(data);
 
-    // Cache in CloudStorage so next open shows fresh data
-    try {
-      Telegram.WebApp.CloudStorage.setItem("profile_settings", json);
-    } catch(e) {}
+    // Cache locally so next open shows fresh data
+    try { localStorage.setItem("profile_settings", json); } catch(e) {}
 
     // Send to bot
-    try {
-      Telegram.WebApp.sendData(json);
-    } catch(e) {}
+    try { Telegram.WebApp.sendData(json); } catch(e) {}
 
-    // Close webapp (sendData should close it, but just in case)
+    // Close webapp
     setTimeout(() => {
       try { Telegram.WebApp.close(); } catch(e) {}
     }, 300);
