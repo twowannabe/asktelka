@@ -170,6 +170,10 @@ def init_db():
         cur.execute("ALTER TABLE user_state ADD COLUMN IF NOT EXISTS last_ritual_date TEXT")
         cur.execute("ALTER TABLE user_state ADD COLUMN IF NOT EXISTS last_thought_date TEXT")
 
+        # Profile settings migrations
+        cur.execute("ALTER TABLE user_state ADD COLUMN IF NOT EXISTS custom_name TEXT DEFAULT ''")
+        cur.execute("ALTER TABLE user_state ADD COLUMN IF NOT EXISTS voice_enabled BOOLEAN DEFAULT TRUE")
+
         conn.commit()
         cur.close()
         release_db_connection(conn)
@@ -352,7 +356,8 @@ def get_user_settings(user_id: int) -> dict:
         cur = conn.cursor()
         cur.execute("""
             SELECT do_not_write_first, last_checkin_date, cheap_reaction_cooldown_until,
-                   mood_label, mood_note, mood_updated_at
+                   mood_label, mood_note, mood_updated_at,
+                   COALESCE(custom_name, ''), COALESCE(voice_enabled, TRUE)
             FROM user_state
             WHERE user_id=%s
         """, (user_id,))
@@ -368,6 +373,8 @@ def get_user_settings(user_id: int) -> dict:
                 "mood_label": None,
                 "mood_note": None,
                 "mood_updated_at": None,
+                "custom_name": "",
+                "voice_enabled": True,
             }
 
         return {
@@ -377,6 +384,8 @@ def get_user_settings(user_id: int) -> dict:
             "mood_label": row[3],
             "mood_note": row[4],
             "mood_updated_at": row[5],
+            "custom_name": row[6] or "",
+            "voice_enabled": bool(row[7]),
         }
     except Exception as e:
         logger.error(f"DB get settings error: {e}", exc_info=True)
@@ -387,6 +396,8 @@ def get_user_settings(user_id: int) -> dict:
             "mood_label": None,
             "mood_note": None,
             "mood_updated_at": None,
+            "custom_name": "",
+            "voice_enabled": True,
         }
 
 
@@ -802,6 +813,32 @@ def get_top_users(limit: int = 10) -> list[dict]:
     except Exception as e:
         logger.error(f"DB get_top_users error: {e}", exc_info=True)
         return []
+
+
+def set_custom_name(user_id: int, name: str):
+    ensure_user_state_row(user_id)
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("UPDATE user_state SET custom_name=%s WHERE user_id=%s", (name, user_id))
+        conn.commit()
+        cur.close()
+        release_db_connection(conn)
+    except Exception as e:
+        logger.error(f"DB set_custom_name error: {e}", exc_info=True)
+
+
+def set_voice_enabled(user_id: int, value: bool):
+    ensure_user_state_row(user_id)
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("UPDATE user_state SET voice_enabled=%s WHERE user_id=%s", (value, user_id))
+        conn.commit()
+        cur.close()
+        release_db_connection(conn)
+    except Exception as e:
+        logger.error(f"DB set_voice_enabled error: {e}", exc_info=True)
 
 
 def get_last_contacts() -> list[tuple]:

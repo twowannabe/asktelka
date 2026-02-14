@@ -2,6 +2,7 @@
 
 import base64
 import io
+import json
 import os
 import re
 import random
@@ -34,7 +35,7 @@ from config import (
     STORY_TEMPLATES, STORY_CHANCE, LEVEL_STORY_UNLOCK, XP_PER_STORY,
     MEMORY_SUMMARIZE_EVERY,
     ACHIEVEMENTS, ACHIEVEMENT_MESSAGES,
-    LISA_MOODS,
+    LISA_MOODS, PERSONALITY_PRESETS,
     disabled_chats, user_personalities, nudes_request_count, active_games,
     get_casual_name,
     logger,
@@ -45,6 +46,7 @@ from db import (
     load_user_personality_from_db, upsert_user_personality,
     update_last_interaction, ensure_user_state_row,
     set_do_not_write_first, get_user_settings, set_cheap_cooldown, set_mood,
+    set_custom_name, set_voice_enabled,
     get_lisa_mood,
     get_user_level_info, get_next_level_xp, add_xp, send_level_up, get_user_voice_chance,
     get_user_memory, save_user_memory, increment_memory_counter,
@@ -318,6 +320,8 @@ async def profile_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             break
 
     earned = get_user_achievements(user_id)
+    st = get_user_settings(user_id)
+    personality = user_personalities.get(user_id) or load_user_personality_from_db(user_id) or ""
 
     if WEBAPP_URL:
         params = urlencode({
@@ -329,6 +333,10 @@ async def profile_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             "xp_next": next_xp or xp,
             "streak": streak,
             "achievements": ",".join(earned),
+            "custom_name": st.get("custom_name", ""),
+            "do_not_write_first": "1" if st.get("do_not_write_first") else "0",
+            "voice_enabled": "1" if st.get("voice_enabled", True) else "0",
+            "personality": personality,
         })
         url = f"{WEBAPP_URL}?{params}"
 
@@ -364,6 +372,52 @@ async def profile_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             f"🏆 ачивки:\n" + "\n".join(ach_lines)
         )
         await update.message.reply_text(text)
+
+
+# ---------------------- WEBAPP DATA ----------------------
+
+async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle settings saved from the /profile Mini App via sendData()."""
+    if update.effective_message is None or update.effective_message.web_app_data is None:
+        return
+
+    user_id = update.effective_user.id
+    raw = update.effective_message.web_app_data.data
+
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        logger.warning(f"Invalid webapp data from user {user_id}: {raw!r}")
+        return
+
+    # custom_name
+    custom_name = (data.get("custom_name") or "").strip()[:50]
+    set_custom_name(user_id, custom_name)
+
+    # do_not_write_first
+    dnwf = bool(data.get("do_not_write_first", False))
+    set_do_not_write_first(user_id, dnwf)
+
+    # voice_enabled
+    ve = bool(data.get("voice_enabled", True))
+    set_voice_enabled(user_id, ve)
+
+    # personality
+    personality_raw = (data.get("personality") or "").strip()
+    if personality_raw.startswith("preset:"):
+        preset_key = personality_raw.split(":", 1)[1]
+        personality_text = PERSONALITY_PRESETS.get(preset_key, "")
+    elif personality_raw.startswith("custom:"):
+        personality_text = personality_raw.split(":", 1)[1].strip()[:500]
+    else:
+        personality_text = ""
+
+    if personality_text:
+        user_personalities[user_id] = personality_text
+        upsert_user_personality(user_id, personality_text)
+    # if empty, don't clear — keep existing
+
+    await update.effective_message.reply_text("сохранила настройки 💛")
 
 
 # ---------------------- TOP ----------------------
@@ -779,9 +833,12 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if chat.type != "private" and not is_bot_enabled(chat_id):
         return
 
-    user_first_name = get_casual_name(user.first_name or user_username or "")
     await run_sync(update_last_interaction, user_id, chat_id, user.first_name or user_username or "", user_username, chat.type)
     await run_sync(ensure_user_state_row, user_id)
+
+    # Use custom_name if set, otherwise get_casual_name
+    _st_voice = await run_sync(get_user_settings, user_id)
+    user_first_name = _st_voice.get("custom_name") or get_casual_name(user.first_name or user_username or "")
 
     # Achievement: night_owl
     if 0 <= local_now().hour < 5:
@@ -861,7 +918,8 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     reply_to_message_id = update.message.message_id
 
     sent_as_voice = False
-    voice_data = await text_to_voice(reply) if user_level >= LEVEL_VOICE_UNLOCK else None
+    _voice_ok = _st_voice.get("voice_enabled", True) and user_level >= LEVEL_VOICE_UNLOCK
+    voice_data = await text_to_voice(reply) if _voice_ok else None
     if voice_data:
         try:
             duration = int(get_ogg_duration(voice_data)) or None
@@ -917,6 +975,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     await run_sync(update_last_interaction, user_id, chat_id, user_first_name, user_username, chat.type)
     await run_sync(ensure_user_state_row, user_id)
+
+    # Use custom_name if set, otherwise get_casual_name
+    _st_name = await run_sync(get_user_settings, user_id)
+    user_first_name = _st_name.get("custom_name") or get_casual_name(user_first_name)
 
     # Achievement: night_owl
     if 0 <= local_now().hour < 5:
@@ -1170,7 +1232,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     sent_as_voice = False
     voice_chance = await run_sync(get_user_voice_chance, user_id)
-    if force_voice or random.random() < voice_chance:
+    _msg_voice_ok = _st_name.get("voice_enabled", True)
+    if _msg_voice_ok and (force_voice or random.random() < voice_chance):
         voice_data = await text_to_voice(reply, style=voice_style)
         if voice_data:
             try:

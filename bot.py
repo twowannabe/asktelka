@@ -24,7 +24,7 @@ from handlers import (
     set_personality_cmd, dontwritefirst_cmd, writefirst_cmd,
     mood_cmd, clear_mood_cmd, mood_lisa_cmd, disable_cmd, reset_cmd,
     selfie_cmd, nudes_gen_cmd, circle_cmd, horoscope_cmd, diary_cmd, voice_cmd,
-    handle_message, handle_voice, handle_media, error_handler,
+    handle_message, handle_voice, handle_media, handle_webapp_data, error_handler,
 )
 from games import truth_cmd, guess_cmd, riddle_cmd, quiz_cmd, quiz_callback
 from checkin import check_lonely_users, update_lisa_mood, send_ritual, send_lisa_thoughts
@@ -66,6 +66,7 @@ def main():
     application.add_handler(CommandHandler("quiz", quiz_cmd))
     application.add_handler(CallbackQueryHandler(quiz_callback, pattern=r"^quiz_"))
 
+    application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_webapp_data))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
     application.add_handler(MessageHandler(filters.PHOTO | filters.Sticker.ALL | filters.VIDEO | filters.ANIMATION, handle_media))

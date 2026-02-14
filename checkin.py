@@ -96,8 +96,8 @@ async def generate_checkin_text(first_name: str, mood_label: str | None = None,
     return f"привет{name_part} 💛 давно не общались, как ты?"
 
 
-async def send_checkin_voice_or_text(bot, chat_id: int, text: str):
-    if random.random() < 0.6:
+async def send_checkin_voice_or_text(bot, chat_id: int, text: str, voice_enabled: bool = True):
+    if voice_enabled and random.random() < 0.6:
         # Try dynamic TTS first
         try:
             from gpt import text_to_voice, get_ogg_duration
@@ -191,8 +191,9 @@ async def check_lonely_users(context: CallbackContext) -> None:
                     and random.random() < STORY_CHECKIN_CHANCE):
                 try:
                     from handlers import _start_story
+                    checkin_display_name = st.get("custom_name") or get_casual_name(first_name)
                     started = await _start_story(
-                        int(user_id), int(chat_id), get_casual_name(first_name),
+                        int(user_id), int(chat_id), checkin_display_name,
                         context.bot, checkin_user_level,
                     )
                     if started:
@@ -201,6 +202,9 @@ async def check_lonely_users(context: CallbackContext) -> None:
                         continue
                 except Exception as e:
                     logger.error(f"Story checkin error for {user_id}: {e}", exc_info=True)
+
+            display_name = st.get("custom_name") or get_casual_name(first_name)
+            voice_ok = st.get("voice_enabled", True)
 
             photos = [f for f in os.listdir(SELFIES_DIR) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))] if os.path.isdir(SELFIES_DIR) else []
             if photos and random.random() < CHECKIN_PHOTO_CHANCE and chat_type == "private":
@@ -211,14 +215,14 @@ async def check_lonely_users(context: CallbackContext) -> None:
             else:
                 mood_label = st.get("mood_label")
                 text = await generate_checkin_text(
-                    first_name=get_casual_name(first_name), mood_label=mood_label,
+                    first_name=display_name, mood_label=mood_label,
                     user_id=int(user_id), silence_hours=silence_hours,
                 )
 
                 if username:
                     text = f"@{username}, {text[0].lower()}{text[1:]}"
 
-                await send_checkin_voice_or_text(context.bot, int(chat_id), text)
+                await send_checkin_voice_or_text(context.bot, int(chat_id), text, voice_enabled=voice_ok)
 
             logger.info(f"Check-in sent to user {user_id} ({first_name}) in chat {chat_id}, silent {silence_hours}h")
 
@@ -309,12 +313,14 @@ async def send_ritual(context: CallbackContext) -> None:
             level_info = get_user_level_info(int(user_id))
             user_level = level_info["level"]
             mood_label = st.get("mood_label")
+            display_name = st.get("custom_name") or get_casual_name(first_name)
+            voice_ok = st.get("voice_enabled", True)
 
             lisa_mood_key = get_lisa_mood()
             lisa_mood_data = LISA_MOODS.get(lisa_mood_key, LISA_MOODS["playful"])
 
             text = await generate_ritual_text(
-                first_name=get_casual_name(first_name),
+                first_name=display_name,
                 ritual_type=ritual_type,
                 mood_label=mood_label,
                 user_id=int(user_id),
@@ -338,7 +344,7 @@ async def send_ritual(context: CallbackContext) -> None:
                     logger.error(f"Ritual selfie error for {user_id}: {e}", exc_info=True)
 
             # Chance for TTS voice
-            if random.random() < RITUAL_VOICE_CHANCE * lisa_mood_data.get("voice_mult", 1.0):
+            if voice_ok and random.random() < RITUAL_VOICE_CHANCE * lisa_mood_data.get("voice_mult", 1.0):
                 try:
                     from gpt import text_to_voice, get_ogg_duration
                     import io
@@ -405,20 +411,22 @@ async def send_lisa_thoughts(context: CallbackContext) -> None:
             level_info = get_user_level_info(int(user_id))
             user_level = level_info["level"]
             memory = get_user_memory(int(user_id))
+            display_name = st.get("custom_name") or get_casual_name(first_name) or ""
+            voice_ok = st.get("voice_enabled", True)
 
             lisa_mood_key = get_lisa_mood()
             lisa_mood_data = LISA_MOODS.get(lisa_mood_key, LISA_MOODS["playful"])
 
             from gpt import generate_lisa_thought
             text = await generate_lisa_thought(
-                user_name=get_casual_name(first_name) or "",
+                user_name=display_name,
                 memory=memory,
                 user_level=user_level,
                 lisa_mood_prompt=lisa_mood_data["prompt_mod"],
             )
 
             # Chance to send thought as voice
-            if random.random() < THOUGHT_VOICE_CHANCE * lisa_mood_data.get("voice_mult", 1.0):
+            if voice_ok and random.random() < THOUGHT_VOICE_CHANCE * lisa_mood_data.get("voice_mult", 1.0):
                 try:
                     from gpt import text_to_voice, get_ogg_duration
                     import io
