@@ -17,6 +17,7 @@ from config import (
     RITUAL_SELFIE_CHANCE, RITUAL_VOICE_CHANCE,
     THOUGHT_CHANCE, THOUGHT_ACTIVE_DAYS,
     SELFIE_CAPTIONS,
+    LONELY_MIN_SILENCE_HOURS, LONELY_CHECKIN_CHANCE,
     client, logger,
 )
 from db import (
@@ -32,7 +33,8 @@ from utils import (
 )
 
 
-async def generate_checkin_text(first_name: str, mood_label: str | None = None, user_id: int | None = None) -> str:
+async def generate_checkin_text(first_name: str, mood_label: str | None = None,
+                                user_id: int | None = None, silence_hours: int = 0) -> str:
     now = local_now()
     if is_morning(now):
         time_of_day = "утро"
@@ -53,12 +55,22 @@ async def generate_checkin_text(first_name: str, mood_label: str | None = None, 
 
     name_ctx = f" Пользователя зовут {first_name}. Обращайся по имени." if first_name else ""
 
+    if silence_hours < 12:
+        silence_ctx = " Он не писал несколько часов."
+    elif silence_hours < 48:
+        silence_ctx = " Он не писал со вчера."
+    else:
+        days = silence_hours // 24
+        silence_ctx = f" Он не писал уже {days} дней."
+
     prompt = (
         f"Ты Лиза — тёплая, заботливая девушка с лёгким флиртом. "
         f"Напиши короткое (1-2 предложения) естественное сообщение пользователю.{name_ctx} "
-        f"Сейчас {time_of_day}. Ты давно не общалась с этим человеком и хочешь узнать, как у него дела.{mood_ctx}{memory_ctx} "
+        f"Сейчас {time_of_day}.{silence_ctx} Ты хочешь узнать, как у него дела, или просто напомнить о себе.{mood_ctx}{memory_ctx} "
         f"Не используй шаблонные фразы вроде 'как дела'. Будь живой, уникальной, как настоящая девушка в мессенджере. "
         f"ВАЖНО: начинай сообщение с маленькой буквы, кроме имён собственных. "
+        f"Никогда не используй ремарки в скобках, звуковые эффекты и ролеплей-действия. "
+        f"ОБЯЗАТЕЛЬНО используй букву «ё» везде, где она нужна. "
         f"Пиши только текст сообщения, без кавычек."
     )
 
@@ -108,8 +120,11 @@ async def check_lonely_users(context: CallbackContext) -> None:
     if not rows:
         return
 
-    today_start = start_of_local_day()
     today_str = local_date_str()
+
+    # Shuffle so that the order differs each run
+    rows = list(rows)
+    random.shuffle(rows)
 
     for (user_id, chat_id, last_interaction, first_name, username, chat_type) in rows:
         try:
@@ -121,8 +136,6 @@ async def check_lonely_users(context: CallbackContext) -> None:
             if st.get("last_checkin_date") == today_str:
                 continue
 
-            set_last_checkin_date(int(user_id), today_str)
-
             if not last_interaction:
                 continue
 
@@ -131,8 +144,24 @@ async def check_lonely_users(context: CallbackContext) -> None:
             else:
                 last_local = last_interaction.astimezone(LOCAL_TZ)
 
-            if last_local >= today_start:
+            silence_hours = int((now - last_local).total_seconds() / 3600)
+            if silence_hours < LONELY_MIN_SILENCE_HOURS:
                 continue
+
+            # Probabilistic: not everyone gets a check-in each cycle
+            # Chance increases the longer they've been silent
+            chance = LONELY_CHECKIN_CHANCE
+            if silence_hours >= 24:
+                chance = min(chance * 2, 0.8)
+            if silence_hours >= 72:
+                chance = min(chance * 3, 0.95)
+            if random.random() > chance:
+                continue
+
+            set_last_checkin_date(int(user_id), today_str)
+
+            # Random delay so messages arrive at different times
+            await asyncio.sleep(random.uniform(5, 120))
 
             photos = [f for f in os.listdir(NUDES_DIR) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))] if os.path.isdir(NUDES_DIR) else []
             if photos and random.random() < CHECKIN_PHOTO_CHANCE and chat_type == "private":
@@ -142,16 +171,19 @@ async def check_lonely_users(context: CallbackContext) -> None:
                     await context.bot.send_photo(chat_id=int(chat_id), photo=ph, caption=caption)
             else:
                 mood_label = st.get("mood_label")
-                text = await generate_checkin_text(first_name=first_name, mood_label=mood_label, user_id=int(user_id))
+                text = await generate_checkin_text(
+                    first_name=first_name, mood_label=mood_label,
+                    user_id=int(user_id), silence_hours=silence_hours,
+                )
 
                 if chat_type != "private" and username:
                     text = f"@{username}, {text[0].lower()}{text[1:]}"
+                elif chat_type != "private" and first_name:
+                    text = f"{first_name}, {text[0].lower()}{text[1:]}"
 
                 await send_checkin_voice_or_text(context.bot, int(chat_id), text)
 
-            update_last_interaction(int(user_id), int(chat_id), first_name)
-
-            logger.info(f"Check-in sent to user {user_id} ({first_name}) in chat {chat_id}")
+            logger.info(f"Check-in sent to user {user_id} ({first_name}) in chat {chat_id}, silent {silence_hours}h")
 
         except TelegramError as e:
             logger.warning(f"Telegram error for user {user_id}: {e}")
