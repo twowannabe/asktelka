@@ -24,10 +24,10 @@ from config import (
     GROUP_COMMENT_CHANCE, GROUP_COMMENT_BUFFER_SIZE, chat_message_buffer,
     JEALOUSY_MIN_LEVEL, JEALOUSY_THRESHOLD, JEALOUSY_CHANCE, JEALOUSY_COOLDOWN_SEC,
     JEALOUSY_REACTIONS, jealousy_counters, jealousy_cooldowns,
-    LEVEL_VOICE_UNLOCK, LEVEL_SELFIE_UNLOCK, LEVEL_VIDEO_NOTE_UNLOCK,
+    LEVEL_VOICE_UNLOCK, LEVEL_SELFIE_UNLOCK, LEVEL_VIDEO_NOTE_UNLOCK, LEVEL_NUDES_UNLOCK,
     XP_PER_TEXT, XP_PER_VOICE, XP_PER_NUDES, XP_PER_SELFIE, XP_PER_VIDEO_NOTE,
     XP_PER_HOROSCOPE, ZODIAC_SIGNS,
-    SELFIE_CHANCE, SELFIE_CAPTIONS,
+    SELFIE_CHANCE, SELFIE_CAPTIONS, NUDES_GEN_CAPTIONS, NUDES_GEN_BASE_PROMPT,
     VIDEO_NOTE_CHANCE, VIDEO_NOTE_CAPTIONS, VIDEO_NOTES_DIR,
     MEMORY_SUMMARIZE_EVERY,
     ACHIEVEMENTS, ACHIEVEMENT_MESSAGES,
@@ -90,6 +90,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/level — твой уровень и XP\n"
         "/achievements — твои ачивки\n"
         "/selfie [подсказка] — селфи от Лизы 📸\n"
+        "/nudes [описание] — фото от Лизы 🔞\n"
         "/circle — кружочек от Лизы 🎥\n"
         "/horoscope [знак] — гороскоп от Лизы 🔮\n"
         "/mood_lisa — узнать настроение Лизы\n\n"
@@ -310,6 +311,38 @@ async def selfie_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     log_interaction(user_id, update.effective_user.username or "", f"/selfie {hint}".strip(), f"[selfie] {caption}")
 
     _, new_level, leveled_up = add_xp(user_id, XP_PER_SELFIE)
+    if leveled_up:
+        await send_level_up(context.bot, chat_id, new_level, update.effective_chat.type)
+
+
+# ---------------------- NUDES GEN ----------------------
+
+async def nudes_gen_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+    user_level_info = get_user_level_info(user_id)
+    user_level = user_level_info["level"]
+
+    if user_level < LEVEL_NUDES_UNLOCK:
+        await update.message.reply_text(
+            f"эта команда доступна с уровня {LEVEL_NUDES_UNLOCK} 😏 пока рано, малыш"
+        )
+        return
+
+    hint = " ".join(context.args).strip() if context.args else ""
+
+    await update.message.reply_text("подожди, фоткаюсь для тебя... 📸")
+    await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_PHOTO)
+    photo_bytes = await generate_selfie(prompt_hint=hint, base_prompt=NUDES_GEN_BASE_PROMPT)
+    if not photo_bytes:
+        await update.message.reply_text("не получилось сфоткаться 😔 попробуй позже")
+        return
+
+    caption = random.choice(NUDES_GEN_CAPTIONS)
+    await context.bot.send_photo(chat_id=chat_id, photo=io.BytesIO(photo_bytes), caption=caption)
+    log_interaction(user_id, update.effective_user.username or "", f"/nudes {hint}".strip(), f"[nudes_gen] {caption}")
+
+    _, new_level, leveled_up = add_xp(user_id, XP_PER_NUDES)
     if leveled_up:
         await send_level_up(context.bot, chat_id, new_level, update.effective_chat.type)
 
