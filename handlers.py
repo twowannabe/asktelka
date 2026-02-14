@@ -29,6 +29,7 @@ from config import (
     XP_PER_HOROSCOPE, XP_PER_DIARY, ZODIAC_SIGNS,
     SELFIE_CHANCE, SELFIE_CAPTIONS, NUDES_GEN_CAPTIONS, NUDES_GEN_BASE_PROMPT,
     VIDEO_NOTE_CHANCE, VIDEO_NOTE_CAPTIONS, VIDEO_NOTES_DIR, VIDEO_NOTE_KEYWORDS,
+    STORY_TEMPLATES, STORY_CHANCE, LEVEL_STORY_UNLOCK, XP_PER_STORY,
     MEMORY_SUMMARIZE_EVERY,
     ACHIEVEMENTS, ACHIEVEMENT_MESSAGES,
     LISA_MOODS,
@@ -49,7 +50,7 @@ from db import (
     get_top_users,
     run_sync,
 )
-from gpt import ask_chatgpt, text_to_voice, get_ogg_duration, transcribe_voice, summarize_memory, generate_chat_comment, generate_jealous_comment, react_to_photo, generate_selfie, generate_video_note, generate_horoscope, generate_diary
+from gpt import ask_chatgpt, text_to_voice, get_ogg_duration, transcribe_voice, summarize_memory, generate_chat_comment, generate_jealous_comment, react_to_photo, generate_selfie, generate_video_note, generate_story_message, generate_horoscope, generate_diary
 from games import handle_game_response
 from utils import (
     escape_markdown_v2, lowercase_first, is_bot_enabled,
@@ -98,6 +99,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/circle — кружочек от Лизы 🎥\n"
         "/horoscope [знак] — гороскоп от Лизы 🔮\n"
         "/voice [--стиль] текст — Лиза зачитает текст 🎙\n"
+        "/story — мини-сюжет с Лизой 💫\n"
         "/diary — дневник отношений с Лизой 📖\n"
         "/mood_lisa — узнать настроение Лизы\n\n"
         "🎮 мини-игры:\n"
@@ -325,6 +327,67 @@ async def top_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         lines.append(f"\nты пока не в топе ({caller_info['xp']} XP) — общайся больше! 😏")
 
     await update.message.reply_text("\n".join(lines))
+
+
+# ---------------------- MINI-STORIES ----------------------
+
+async def _start_story(user_id: int, chat_id: int, user_name: str, bot, user_level: int):
+    """Start a story for user. Returns True if started, False if no suitable template."""
+    available = [t for t in STORY_TEMPLATES if t["min_level"] <= user_level]
+    if not available:
+        return False
+
+    template = random.choice(available)
+
+    lisa_mood_key = get_lisa_mood()
+    lisa_mood_data = LISA_MOODS.get(lisa_mood_key, LISA_MOODS["playful"])
+
+    first_msg = await generate_story_message(
+        template=template,
+        step=1,
+        max_steps=template["steps"],
+        history=[],
+        user_name=user_name,
+        user_level=user_level,
+        lisa_mood_prompt=lisa_mood_data["prompt_mod"],
+    )
+
+    active_games[user_id] = {
+        "type": "story",
+        "template": template["key"],
+        "step": 1,
+        "max_steps": template["steps"],
+        "history": [{"role": "assistant", "content": first_msg}],
+    }
+
+    await bot.send_message(chat_id=chat_id, text=first_msg)
+    return True
+
+
+async def story_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+    user_level_info = get_user_level_info(user_id)
+    user_level = user_level_info["level"]
+
+    if user_level < LEVEL_STORY_UNLOCK:
+        await update.message.reply_text(
+            f"мини-сюжеты доступны с уровня {LEVEL_STORY_UNLOCK} 😏 пока пообщаемся?"
+        )
+        return
+
+    if user_id in active_games:
+        await update.message.reply_text("у тебя уже идёт игра или сюжет 😏 заверши сначала")
+        return
+
+    user_name = update.effective_user.first_name or ""
+
+    await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+    await asyncio.sleep(random.uniform(1, 2))
+
+    started = await _start_story(user_id, chat_id, user_name, context.bot, user_level)
+    if not started:
+        await update.message.reply_text("не могу придумать сюжет сейчас 😔 попробуй позже")
 
 
 # ---------------------- SELFIE ----------------------
@@ -1118,6 +1181,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     await context.bot.send_message(chat_id=chat_id, text=caption)
         except Exception as e:
             logger.error(f"Spontaneous video note error: {e}", exc_info=True)
+
+    # Spontaneous mini-story (private chat only, level gated, no active game)
+    if (chat.type == "private"
+            and user_level >= LEVEL_STORY_UNLOCK
+            and user_id not in active_games
+            and random.random() < STORY_CHANCE * lisa_mood_data.get("circle_mult", 1.0)):
+        try:
+            await _start_story(user_id, chat_id, user_first_name, context.bot, user_level)
+        except Exception as e:
+            logger.error(f"Spontaneous story error: {e}", exc_info=True)
 
 
 async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

@@ -18,6 +18,8 @@ from config import (
     THOUGHT_CHANCE, THOUGHT_ACTIVE_DAYS,
     SELFIE_CAPTIONS,
     LONELY_MIN_SILENCE_HOURS, LONELY_CHECKIN_CHANCE,
+    STORY_TEMPLATES, STORY_CHECKIN_CHANCE, LEVEL_STORY_UNLOCK,
+    active_games,
     client, logger,
 )
 from db import (
@@ -162,6 +164,27 @@ async def check_lonely_users(context: CallbackContext) -> None:
 
             # Random delay so messages arrive at different times
             await asyncio.sleep(random.uniform(5, 120))
+
+            level_info = get_user_level_info(int(user_id))
+            checkin_user_level = level_info["level"]
+
+            # Chance to start a mini-story instead of regular checkin
+            if (chat_type == "private"
+                    and checkin_user_level >= LEVEL_STORY_UNLOCK
+                    and int(user_id) not in active_games
+                    and random.random() < STORY_CHECKIN_CHANCE):
+                try:
+                    from handlers import _start_story
+                    started = await _start_story(
+                        int(user_id), int(chat_id), first_name,
+                        context.bot, checkin_user_level,
+                    )
+                    if started:
+                        logger.info(f"Story checkin sent to user {user_id} ({first_name})")
+                        update_last_interaction(int(user_id), int(chat_id), first_name)
+                        continue
+                except Exception as e:
+                    logger.error(f"Story checkin error for {user_id}: {e}", exc_info=True)
 
             photos = [f for f in os.listdir(NUDES_DIR) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))] if os.path.isdir(NUDES_DIR) else []
             if photos and random.random() < CHECKIN_PHOTO_CHANCE and chat_type == "private":

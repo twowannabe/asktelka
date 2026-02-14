@@ -407,6 +407,63 @@ async def generate_video_note(prompt_hint: str = "") -> bytes | None:
         return None
 
 
+async def generate_story_message(
+    template: dict,
+    step: int,
+    max_steps: int,
+    history: list[dict],
+    user_name: str,
+    user_level: int,
+    lisa_mood_prompt: str,
+) -> str:
+    personality = LEVEL_PERSONALITIES.get(user_level, LEVEL_PERSONALITIES[7])
+
+    if step == 1:
+        step_instruction = (
+            f"Начни мини-сюжет. Задание: {template['setup']} "
+            "Напиши 1-2 предложения, задай вопрос чтобы вовлечь пользователя."
+        )
+    elif step >= max_steps:
+        step_instruction = (
+            "Это финал сюжета. Заверши историю естественно и тепло, "
+            "отреагируй на последний ответ пользователя. 1-2 предложения."
+        )
+    else:
+        step_instruction = (
+            "Продолжи сюжет, отреагируй на ответ пользователя, развей историю дальше. "
+            "Задай следующий вопрос или предложи выбор. 1-2 предложения."
+        )
+
+    name_ctx = f" Пользователя зовут {user_name}." if user_name else ""
+    system_prompt = (
+        f"{personality} "
+        f"Ты Лиза, ведёшь мини-сюжет с пользователем.{name_ctx} "
+        f"Твоё настроение: {lisa_mood_prompt} "
+        f"{step_instruction} "
+        "ВАЖНО: начинай с маленькой буквы. "
+        "Никогда не используй ремарки в скобках, звуковые эффекты и ролеплей-действия. "
+        "ОБЯЗАТЕЛЬНО используй букву «ё» везде, где она нужна."
+    )
+
+    messages = [{"role": "system", "content": system_prompt}] + history
+
+    try:
+        response = await asyncio.wait_for(
+            client.chat.completions.create(
+                model="grok-3-mini",
+                messages=messages,
+            ),
+            timeout=30,
+        )
+        reply = (response.choices[0].message.content or "").strip()
+        if reply:
+            return lowercase_first(reply)
+    except Exception as e:
+        logger.error(f"Story message generation error: {e}", exc_info=True)
+
+    return "ой, я потеряла мысль... давай в другой раз? 😅"
+
+
 async def generate_horoscope(sign: str, user_level: int) -> str:
     personality = LEVEL_PERSONALITIES.get(user_level, LEVEL_PERSONALITIES[7])
     system_prompt = (
