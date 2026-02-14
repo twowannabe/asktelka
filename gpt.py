@@ -11,6 +11,7 @@ from config import (
     LEVEL_PERSONALITIES,
     client, groq_client, default_personality, logger,
 )
+from base64 import b64encode
 from utils import lowercase_first
 
 
@@ -114,6 +115,46 @@ async def summarize_memory(old_summary: str, recent_messages: list[dict]) -> str
     except Exception as e:
         logger.error(f"Memory summarization error: {e}", exc_info=True)
         return old_summary
+
+
+async def react_to_photo(image_base64: str, user_level: int = 7) -> str:
+    personality = LEVEL_PERSONALITIES.get(user_level, LEVEL_PERSONALITIES[7])
+    system_prompt = (
+        f"{personality} "
+        "Тебе прислали фото. Напиши короткий комментарий (до 15 слов) к этому фото. "
+        "Комментируй естественно, как живой человек в мессенджере. "
+        "ВАЖНО: всегда начинай с маленькой буквы, кроме имён собственных. "
+        "Никогда не используй ремарки в скобках, звуковые эффекты и ролеплей-действия. "
+        "ОБЯЗАТЕЛЬНО используй букву «ё» везде, где она нужна (ещё, всё, её, твоё, моё и т.д.). Никогда не заменяй «ё» на «е»."
+    )
+    try:
+        response = await asyncio.wait_for(
+            client.chat.completions.create(
+                model="grok-2-vision",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{image_base64}",
+                                },
+                            },
+                        ],
+                    },
+                ],
+            ),
+            timeout=30,
+        )
+        reply = (response.choices[0].message.content or "").strip()
+        if not reply:
+            return ""
+        return lowercase_first(reply)
+    except Exception as e:
+        logger.error(f"Vision API error: {e}", exc_info=True)
+        return ""
 
 
 async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood_label: str = "", memory: str = "", user_level: int = 7) -> str:

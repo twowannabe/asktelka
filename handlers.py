@@ -1,5 +1,6 @@
 """Command handlers and message handlers."""
 
+import base64
 import io
 import os
 import re
@@ -36,7 +37,7 @@ from db import (
     get_user_memory, save_user_memory, increment_memory_counter,
     get_user_achievements, grant_achievement,
 )
-from gpt import ask_chatgpt, text_to_voice, transcribe_voice, summarize_memory, generate_chat_comment
+from gpt import ask_chatgpt, text_to_voice, transcribe_voice, summarize_memory, generate_chat_comment, react_to_photo
 from games import handle_game_response
 from utils import (
     escape_markdown_v2, lowercase_first, is_bot_enabled,
@@ -645,7 +646,9 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     chat = update.effective_chat
+    user = update.effective_user
     chat_id = chat.id
+    user_id = user.id
 
     if chat.type != "private" and not is_bot_enabled(chat_id):
         return
@@ -653,6 +656,31 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if chat.type != "private" and random.random() > MEDIA_REACTION_CHANCE:
         return
 
+    # Try vision analysis for photos
+    photo = update.message.photo
+    if photo:
+        try:
+            user_level_info = get_user_level_info(user_id)
+            user_level = user_level_info["level"]
+
+            file = await context.bot.get_file(photo[-1].file_id)
+            photo_bytes = await file.download_as_bytearray()
+            image_base64 = base64.b64encode(photo_bytes).decode("utf-8")
+
+            await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+            reply = await react_to_photo(image_base64, user_level)
+
+            if reply:
+                await asyncio.sleep(random.uniform(1, 3))
+                if chat.type == "private":
+                    await context.bot.send_message(chat_id=chat_id, text=reply)
+                else:
+                    await update.message.reply_text(reply, reply_to_message_id=update.message.message_id)
+                return
+        except Exception as e:
+            logger.error(f"Vision reaction error: {e}", exc_info=True)
+
+    # Fallback: emoji reaction or random text
     if random.random() < 0.4:
         try:
             from telegram import ReactionTypeEmoji
