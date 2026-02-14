@@ -825,15 +825,18 @@ async def horoscope_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 # ---------------------- CHALLENGE ----------------------
 
 async def challenge_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.info(f"challenge_cmd called by user {update.effective_user.id} in chat {update.effective_chat.id}")
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
 
     if user_id in active_games:
+        logger.info(f"challenge_cmd: user {user_id} already in active_games: {active_games[user_id]}")
         await update.message.reply_text("у тебя уже идёт игра или челлендж 😏 заверши сначала")
         return
 
     today = local_now().strftime("%Y-%m-%d")
     last_date = await run_sync(get_last_challenge_date, user_id)
+    logger.info(f"challenge_cmd: last_date={last_date}, today={today}")
     if last_date == today:
         await update.message.reply_text("я уже давала тебе челлендж сегодня 😏 приходи завтра!")
         return
@@ -842,6 +845,7 @@ async def challenge_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     level_info = await run_sync(get_user_level_info, user_id)
     user_level = level_info["level"]
     memory = await run_sync(get_user_memory, user_id)
+    logger.info(f"challenge_cmd: generating challenge for {user_first_name}, level={user_level}")
 
     lisa_mood_key = await run_sync(get_lisa_mood)
     lisa_mood_data = LISA_MOODS.get(lisa_mood_key, LISA_MOODS["playful"])
@@ -849,20 +853,25 @@ async def challenge_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
     await asyncio.sleep(random.uniform(1, 2))
 
-    challenge_text = await generate_challenge(
-        user_name=user_first_name,
-        user_level=user_level,
-        lisa_mood_prompt=lisa_mood_data["prompt_mod"],
-        memory=memory,
-    )
+    try:
+        challenge_text = await generate_challenge(
+            user_name=user_first_name,
+            user_level=user_level,
+            lisa_mood_prompt=lisa_mood_data["prompt_mod"],
+            memory=memory,
+        )
+        logger.info(f"challenge_cmd: generated challenge: {challenge_text[:80]}")
 
-    active_games[user_id] = {
-        "type": "challenge",
-        "challenge": challenge_text,
-    }
-    await run_sync(set_last_challenge_date, user_id, today)
+        active_games[user_id] = {
+            "type": "challenge",
+            "challenge": challenge_text,
+        }
+        await run_sync(set_last_challenge_date, user_id, today)
 
-    await update.message.reply_text(f"🎯 челлендж от Лизы:\n\n{challenge_text}")
+        await update.message.reply_text(f"🎯 челлендж от Лизы:\n\n{challenge_text}")
+    except Exception as e:
+        logger.error(f"challenge_cmd error: {e}", exc_info=True)
+        await update.message.reply_text("ой, не получилось придумать челлендж 😔 попробуй позже")
 
 
 # ---------------------- MESSAGE HANDLERS ----------------------
