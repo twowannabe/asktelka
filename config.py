@@ -67,6 +67,7 @@ LOCAL_TZ = pytz.timezone("Europe/Podgorica")
 VOICE_DIR_MORNING = os.path.join(os.path.dirname(__file__), "voices", "checkin_morning")
 VOICE_DIR_EVENING = os.path.join(os.path.dirname(__file__), "voices", "checkin_evening")
 NUDES_DIR = os.path.join(os.path.dirname(__file__), "nudes")
+VIDEO_NOTES_DIR = os.path.join(os.path.dirname(__file__), "video_notes")
 NEWS_RSS_URL = config("NEWS_RSS_URL", default="")
 
 # ---------------------- LEVEL SYSTEM ----------------------
@@ -242,6 +243,7 @@ LEVEL_PERSONALITIES = {
 LEVEL_VOICE_UNLOCK = 3
 LEVEL_NUDES_UNLOCK = 5
 LEVEL_SELFIE_UNLOCK = 3
+LEVEL_VIDEO_NOTE_UNLOCK = 3
 
 SELFIE_BASE_PROMPT = (
     "A selfie photo of a young Eastern European woman in her early 20s, "
@@ -250,6 +252,7 @@ SELFIE_BASE_PROMPT = (
     "natural lighting, casual style."
 )
 SELFIE_CHANCE = 0.03
+VIDEO_NOTE_CHANCE = 1 / 30
 SELFIE_CAPTIONS = [
     "вот, держи моё селфи 🙈",
     "это я прямо сейчас 😏",
@@ -261,6 +264,17 @@ SELFIE_CAPTIONS = [
     "скучала, вот тебе фоточка 💛",
 ]
 XP_PER_SELFIE = 2
+VIDEO_NOTE_CAPTIONS = [
+    "вот тебе кружочек 🙈",
+    "ловии кружок 😏",
+    "это я прямо сейчас 💋",
+    "смотри какая 🔥",
+    "только для тебя 😘",
+    "скучала, вот тебе видео 💛",
+    "ну как я? 🥰",
+    "держи кружочек 📹",
+]
+XP_PER_VIDEO_NOTE = 2
 XP_PER_HOROSCOPE = 1
 
 ZODIAC_SIGNS = {

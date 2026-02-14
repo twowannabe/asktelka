@@ -24,10 +24,11 @@ from config import (
     GROUP_COMMENT_CHANCE, GROUP_COMMENT_BUFFER_SIZE, chat_message_buffer,
     JEALOUSY_MIN_LEVEL, JEALOUSY_THRESHOLD, JEALOUSY_CHANCE, JEALOUSY_COOLDOWN_SEC,
     JEALOUSY_REACTIONS, jealousy_counters, jealousy_cooldowns,
-    LEVEL_VOICE_UNLOCK, LEVEL_SELFIE_UNLOCK,
-    XP_PER_TEXT, XP_PER_VOICE, XP_PER_NUDES, XP_PER_SELFIE,
+    LEVEL_VOICE_UNLOCK, LEVEL_SELFIE_UNLOCK, LEVEL_VIDEO_NOTE_UNLOCK,
+    XP_PER_TEXT, XP_PER_VOICE, XP_PER_NUDES, XP_PER_SELFIE, XP_PER_VIDEO_NOTE,
     XP_PER_HOROSCOPE, ZODIAC_SIGNS,
     SELFIE_CHANCE, SELFIE_CAPTIONS,
+    VIDEO_NOTE_CHANCE, VIDEO_NOTE_CAPTIONS, VIDEO_NOTES_DIR,
     MEMORY_SUMMARIZE_EVERY,
     ACHIEVEMENTS, ACHIEVEMENT_MESSAGES,
     disabled_chats, user_personalities, nudes_request_count, active_games,
@@ -87,6 +88,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/level — твой уровень и XP\n"
         "/achievements — твои ачивки\n"
         "/selfie [подсказка] — селфи от Лизы 📸\n"
+        "/circle — кружочек от Лизы 🎥\n"
         "/horoscope [знак] — гороскоп от Лизы 🔮\n\n"
         "🎮 мини-игры:\n"
         "/truth — правда или действие (+2 XP)\n"
@@ -299,6 +301,44 @@ async def selfie_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     log_interaction(user_id, update.effective_user.username or "", f"/selfie {hint}".strip(), f"[selfie] {caption}")
 
     _, new_level, leveled_up = add_xp(user_id, XP_PER_SELFIE)
+    if leveled_up:
+        await send_level_up(context.bot, chat_id, new_level, update.effective_chat.type)
+
+
+# ---------------------- VIDEO NOTE (CIRCLE) ----------------------
+
+async def circle_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+    user_level_info = get_user_level_info(user_id)
+    user_level = user_level_info["level"]
+
+    if user_level < LEVEL_VIDEO_NOTE_UNLOCK:
+        await update.message.reply_text(
+            f"кружочки доступны с уровня {LEVEL_VIDEO_NOTE_UNLOCK} 😏 пока пообщаемся?"
+        )
+        return
+
+    if not os.path.isdir(VIDEO_NOTES_DIR):
+        await update.message.reply_text("у меня пока нет кружочков 😔")
+        return
+
+    videos = [f for f in os.listdir(VIDEO_NOTES_DIR) if f.lower().endswith(".mp4")]
+    if not videos:
+        await update.message.reply_text("у меня пока нет кружочков 😔")
+        return
+
+    video_path = os.path.join(VIDEO_NOTES_DIR, random.choice(videos))
+    caption = random.choice(VIDEO_NOTE_CAPTIONS)
+
+    await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_VIDEO_NOTE)
+    with open(video_path, "rb") as vf:
+        await context.bot.send_video_note(chat_id=chat_id, video_note=vf)
+    await context.bot.send_message(chat_id=chat_id, text=caption)
+
+    log_interaction(user_id, update.effective_user.username or "", "/circle", f"[video_note] {caption}")
+
+    _, new_level, leveled_up = add_xp(user_id, XP_PER_VIDEO_NOTE)
     if leveled_up:
         await send_level_up(context.bot, chat_id, new_level, update.effective_chat.type)
 
@@ -778,6 +818,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 await context.bot.send_photo(chat_id=chat_id, photo=io.BytesIO(photo_bytes), caption=caption)
         except Exception as e:
             logger.error(f"Spontaneous selfie error: {e}", exc_info=True)
+
+    # Spontaneous video note (private chat only, level gated)
+    if chat.type == "private" and user_level >= LEVEL_VIDEO_NOTE_UNLOCK and random.random() < VIDEO_NOTE_CHANCE:
+        try:
+            if os.path.isdir(VIDEO_NOTES_DIR):
+                videos = [f for f in os.listdir(VIDEO_NOTES_DIR) if f.lower().endswith(".mp4")]
+                if videos:
+                    video_path = os.path.join(VIDEO_NOTES_DIR, random.choice(videos))
+                    await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_VIDEO_NOTE)
+                    with open(video_path, "rb") as vf:
+                        await context.bot.send_video_note(chat_id=chat_id, video_note=vf)
+                    caption = random.choice(VIDEO_NOTE_CAPTIONS)
+                    await context.bot.send_message(chat_id=chat_id, text=caption)
+        except Exception as e:
+            logger.error(f"Spontaneous video note error: {e}", exc_info=True)
 
 
 async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
