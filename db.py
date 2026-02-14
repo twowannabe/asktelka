@@ -166,6 +166,10 @@ def init_db():
         cur.execute("ALTER TABLE user_state ADD COLUMN IF NOT EXISTS zodiac_sign TEXT")
         cur.execute("ALTER TABLE user_state ADD COLUMN IF NOT EXISTS last_horoscope_date TEXT")
 
+        # Ritual & thought migrations
+        cur.execute("ALTER TABLE user_state ADD COLUMN IF NOT EXISTS last_ritual_date TEXT")
+        cur.execute("ALTER TABLE user_state ADD COLUMN IF NOT EXISTS last_thought_date TEXT")
+
         conn.commit()
         cur.close()
         release_db_connection(conn)
@@ -712,6 +716,62 @@ def set_lisa_mood(mood: str):
         release_db_connection(conn)
     except Exception as e:
         logger.error(f"DB set_lisa_mood error: {e}", exc_info=True)
+
+
+def get_last_ritual_date(user_id: int) -> str | None:
+    ensure_user_state_row(user_id)
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT last_ritual_date FROM user_state WHERE user_id=%s", (user_id,))
+        row = cur.fetchone()
+        cur.close()
+        release_db_connection(conn)
+        return row[0] if row else None
+    except Exception as e:
+        logger.error(f"DB get_last_ritual_date error: {e}", exc_info=True)
+        return None
+
+
+def set_last_ritual_date(user_id: int, date_str: str):
+    ensure_user_state_row(user_id)
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("UPDATE user_state SET last_ritual_date=%s WHERE user_id=%s", (date_str, user_id))
+        conn.commit()
+        cur.close()
+        release_db_connection(conn)
+    except Exception as e:
+        logger.error(f"DB set_last_ritual_date error: {e}", exc_info=True)
+
+
+def get_last_thought_date(user_id: int) -> str | None:
+    ensure_user_state_row(user_id)
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT last_thought_date FROM user_state WHERE user_id=%s", (user_id,))
+        row = cur.fetchone()
+        cur.close()
+        release_db_connection(conn)
+        return row[0] if row else None
+    except Exception as e:
+        logger.error(f"DB get_last_thought_date error: {e}", exc_info=True)
+        return None
+
+
+def set_last_thought_date(user_id: int, date_str: str):
+    ensure_user_state_row(user_id)
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("UPDATE user_state SET last_thought_date=%s WHERE user_id=%s", (date_str, user_id))
+        conn.commit()
+        cur.close()
+        release_db_connection(conn)
+    except Exception as e:
+        logger.error(f"DB set_last_thought_date error: {e}", exc_info=True)
 
 
 def get_last_contacts() -> list[tuple]:

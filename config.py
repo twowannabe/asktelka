@@ -345,6 +345,17 @@ VIDEO_NOTE_CAPTIONS = [
 ]
 XP_PER_VIDEO_NOTE = 2
 XP_PER_HOROSCOPE = 1
+XP_PER_DIARY = 1
+
+# ---------------------- RITUALS ----------------------
+RITUAL_SELFIE_CHANCE = 0.15
+RITUAL_VOICE_CHANCE = 0.25
+RITUAL_CHECK_INTERVAL_SEC = 30 * 60
+
+# ---------------------- LISA THOUGHTS ----------------------
+THOUGHT_CHANCE = 0.5
+THOUGHT_CHECK_INTERVAL_SEC = 2 * 60 * 60
+THOUGHT_ACTIVE_DAYS = 3
 
 ZODIAC_SIGNS = {
     "овен": "♈", "телец": "♉", "близнецы": "♊", "рак": "♋",
