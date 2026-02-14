@@ -9,7 +9,7 @@ from telegram.constants import ChatAction
 from telegram.ext import ContextTypes
 
 from config import (
-    XP_PER_TRUTH, XP_PER_GUESS, XP_PER_RIDDLE, XP_PER_QUIZ, XP_PER_STORY,
+    XP_PER_TRUTH, XP_PER_GUESS, XP_PER_RIDDLE, XP_PER_QUIZ, XP_PER_STORY, XP_PER_CHALLENGE,
     STORY_TEMPLATES, LISA_MOODS,
     active_games, get_casual_name, client, logger,
 )
@@ -252,6 +252,23 @@ async def handle_game_response(user_id: int, text: str, update: Update, context:
                 await send_level_up(context.bot, chat_id, new_level)
         else:
             await update.message.reply_text(f"❌ неа, правильный ответ: {correct_answer} 😏")
+        return True
+
+    elif game["type"] == "challenge":
+        from gpt import verify_challenge
+
+        challenge_text = game["challenge"]
+        await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+        done, comment = await verify_challenge(challenge_text, text)
+
+        if done:
+            active_games.pop(user_id, None)
+            _, new_level, leveled_up = add_xp(user_id, XP_PER_CHALLENGE)
+            await update.message.reply_text(f"{comment}\n\n+{XP_PER_CHALLENGE} XP ⭐")
+            if leveled_up:
+                await send_level_up(context.bot, chat_id, new_level)
+        else:
+            await update.message.reply_text(comment)
         return True
 
     elif game["type"] == "story":

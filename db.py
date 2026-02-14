@@ -170,6 +170,9 @@ def init_db():
         cur.execute("ALTER TABLE user_state ADD COLUMN IF NOT EXISTS last_ritual_date TEXT")
         cur.execute("ALTER TABLE user_state ADD COLUMN IF NOT EXISTS last_thought_date TEXT")
 
+        # Challenge migration
+        cur.execute("ALTER TABLE user_state ADD COLUMN IF NOT EXISTS last_challenge_date TEXT")
+
         # Profile settings migrations
         cur.execute("ALTER TABLE user_state ADD COLUMN IF NOT EXISTS custom_name TEXT DEFAULT ''")
         cur.execute("ALTER TABLE user_state ADD COLUMN IF NOT EXISTS voice_enabled BOOLEAN DEFAULT TRUE")
@@ -781,6 +784,34 @@ def set_last_thought_date(user_id: int, date_str: str):
         release_db_connection(conn)
     except Exception as e:
         logger.error(f"DB set_last_thought_date error: {e}", exc_info=True)
+
+
+def get_last_challenge_date(user_id: int) -> str | None:
+    ensure_user_state_row(user_id)
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT last_challenge_date FROM user_state WHERE user_id=%s", (user_id,))
+        row = cur.fetchone()
+        cur.close()
+        release_db_connection(conn)
+        return row[0] if row else None
+    except Exception as e:
+        logger.error(f"DB get_last_challenge_date error: {e}", exc_info=True)
+        return None
+
+
+def set_last_challenge_date(user_id: int, date_str: str):
+    ensure_user_state_row(user_id)
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("UPDATE user_state SET last_challenge_date=%s WHERE user_id=%s", (date_str, user_id))
+        conn.commit()
+        cur.close()
+        release_db_connection(conn)
+    except Exception as e:
+        logger.error(f"DB set_last_challenge_date error: {e}", exc_info=True)
 
 
 def get_top_users(limit: int = 10) -> list[dict]:

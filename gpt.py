@@ -723,6 +723,77 @@ async def generate_lisa_thought(user_name: str, memory: str, user_level: int, li
         return "задумалась о чём-то... 💭"
 
 
+async def generate_challenge(user_name: str, user_level: int, lisa_mood_prompt: str, memory: str) -> str:
+    personality = LEVEL_PERSONALITIES.get(user_level, LEVEL_PERSONALITIES[7])
+    name_ctx = f" Пользователя зовут {user_name}." if user_name else ""
+    memory_ctx = f" Память о пользователе: {memory}" if memory else ""
+    system_prompt = (
+        f"{personality} "
+        f"Ты Лиза, даёшь пользователю ежедневный челлендж — маленькое задание на день.{name_ctx}{memory_ctx} "
+        f"Твоё настроение: {lisa_mood_prompt} "
+        "Придумай одно короткое задание (1-2 предложения). "
+        "Задание должно быть простым и весёлым: прислать фото чего-то, рассказать историю, сделать что-то приятное. "
+        "ВАЖНО: начинай с маленькой буквы. "
+        "Никогда не используй ремарки в скобках, звуковые эффекты и ролеплей-действия. "
+        "ОБЯЗАТЕЛЬНО используй букву «ё» везде, где она нужна."
+    )
+    try:
+        response = await asyncio.wait_for(
+            client.chat.completions.create(
+                model="grok-3-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": "Придумай мне челлендж на сегодня."},
+                ],
+            ),
+            timeout=30,
+        )
+        reply = (response.choices[0].message.content or "").strip()
+        if reply:
+            return lowercase_first(reply)
+    except Exception as e:
+        logger.error(f"Challenge generation error: {e}", exc_info=True)
+    return "пришли мне фото своего обеда сегодня 📸"
+
+
+async def verify_challenge(challenge_text: str, user_response: str) -> tuple[bool, str]:
+    system_prompt = (
+        "Ты проверяешь, выполнил ли пользователь челлендж. "
+        "Ответь строго в формате JSON: {\"done\": true/false, \"comment\": \"короткий комментарий от Лизы\"}. "
+        "Комментарий должен быть от лица дерзкой девушки Лизы (1 предложение). "
+        "Начинай комментарий с маленькой буквы. Только JSON, без пояснений."
+    )
+    user_prompt = (
+        f"Челлендж: «{challenge_text}»\n"
+        f"Ответ пользователя: «{user_response}»\n"
+        "Выполнен ли челлендж?"
+    )
+    try:
+        response = await asyncio.wait_for(
+            client.chat.completions.create(
+                model="grok-3-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+            ),
+            timeout=15,
+        )
+        raw = (response.choices[0].message.content or "").strip()
+        import json
+        start = raw.find("{")
+        end = raw.rfind("}") + 1
+        data = json.loads(raw[start:end])
+        done = bool(data.get("done", False))
+        comment = lowercase_first((data.get("comment") or "").strip())
+        if not comment:
+            comment = "молодец! 🔥" if done else "попробуй ещё раз 😏"
+        return done, comment
+    except Exception as e:
+        logger.error(f"Challenge verification error: {e}", exc_info=True)
+        return False, "не поняла, попробуй ещё раз 😅"
+
+
 async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood_label: str = "", lisa_mood: str = "", memory: str = "", user_level: int = 7, is_group: bool = False) -> str:
     try:
         name_part = ""

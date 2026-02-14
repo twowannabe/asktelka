@@ -52,10 +52,11 @@ from db import (
     get_user_memory, save_user_memory, increment_memory_counter,
     get_user_achievements, grant_achievement,
     get_user_zodiac, set_user_zodiac, get_last_horoscope_date, set_last_horoscope_date,
+    get_last_challenge_date, set_last_challenge_date,
     get_top_users,
     run_sync,
 )
-from gpt import ask_chatgpt, text_to_voice, get_ogg_duration, transcribe_voice, summarize_memory, generate_chat_comment, generate_jealous_comment, react_to_photo, generate_selfie, generate_video_note, generate_story_message, generate_horoscope, generate_diary, extract_pose_hint
+from gpt import ask_chatgpt, text_to_voice, get_ogg_duration, transcribe_voice, summarize_memory, generate_chat_comment, generate_jealous_comment, react_to_photo, generate_selfie, generate_video_note, generate_story_message, generate_horoscope, generate_diary, extract_pose_hint, generate_challenge
 from games import handle_game_response
 from utils import (
     escape_markdown_v2, lowercase_first, is_bot_enabled,
@@ -103,6 +104,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/horoscope [знак] — гороскоп 🔮\n"
         "/story — интерактивный мини-сюжет 💫\n\n"
         "🎮 мини-игры:\n"
+        "/challenge — челлендж дня (+5 XP)\n"
         "/truth — правда или действие (+2 XP)\n"
         "/guess — угадай число 1-100 (+3 XP)\n"
         "/riddle — загадка (+5 XP)\n"
@@ -818,6 +820,49 @@ async def horoscope_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     _, new_level, leveled_up = add_xp(user_id, XP_PER_HOROSCOPE)
     if leveled_up:
         await send_level_up(context.bot, chat_id, new_level, update.effective_chat.type)
+
+
+# ---------------------- CHALLENGE ----------------------
+
+async def challenge_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+
+    if user_id in active_games:
+        await update.message.reply_text("у тебя уже идёт игра или челлендж 😏 заверши сначала")
+        return
+
+    today = local_now().strftime("%Y-%m-%d")
+    last_date = await run_sync(get_last_challenge_date, user_id)
+    if last_date == today:
+        await update.message.reply_text("я уже давала тебе челлендж сегодня 😏 приходи завтра!")
+        return
+
+    user_first_name = get_casual_name(update.effective_user.first_name or "")
+    level_info = await run_sync(get_user_level_info, user_id)
+    user_level = level_info["level"]
+    memory = await run_sync(get_user_memory, user_id)
+
+    lisa_mood_key = await run_sync(get_lisa_mood)
+    lisa_mood_data = LISA_MOODS.get(lisa_mood_key, LISA_MOODS["playful"])
+
+    await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+    await asyncio.sleep(random.uniform(1, 2))
+
+    challenge_text = await generate_challenge(
+        user_name=user_first_name,
+        user_level=user_level,
+        lisa_mood_prompt=lisa_mood_data["prompt_mod"],
+        memory=memory,
+    )
+
+    active_games[user_id] = {
+        "type": "challenge",
+        "challenge": challenge_text,
+    }
+    await run_sync(set_last_challenge_date, user_id, today)
+
+    await update.message.reply_text(f"🎯 челлендж от Лизы:\n\n{challenge_text}")
 
 
 # ---------------------- MESSAGE HANDLERS ----------------------

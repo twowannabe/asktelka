@@ -29,6 +29,7 @@ from db import (
     get_user_memory, get_user_level_info, get_lisa_mood, set_lisa_mood,
     get_last_ritual_date, set_last_ritual_date,
     get_last_thought_date, set_last_thought_date,
+    get_last_challenge_date, set_last_challenge_date,
 )
 from utils import (
     local_now, local_date_str, start_of_local_day,
@@ -470,3 +471,65 @@ async def update_lisa_mood(context: CallbackContext) -> None:
 
     set_lisa_mood(new_mood)
     logger.info(f"Lisa mood updated: {new_mood} (period={period})")
+
+
+async def send_daily_challenges(context: CallbackContext) -> None:
+    now = local_now()
+    if now.hour < 12 or now.hour >= 13:
+        return
+
+    rows = get_last_contacts()
+    if not rows:
+        return
+
+    today_str = local_date_str()
+
+    for (user_id, chat_id, last_interaction, first_name, username, chat_type) in rows:
+        try:
+            if chat_type != "private":
+                continue
+
+            uid = int(user_id)
+            cid = int(chat_id)
+
+            st = get_user_settings(uid)
+            if st.get("do_not_write_first"):
+                continue
+
+            if get_last_challenge_date(uid) == today_str:
+                continue
+
+            if uid in active_games:
+                continue
+
+            level_info = get_user_level_info(uid)
+            user_level = level_info["level"]
+            memory = get_user_memory(uid)
+            display_name = _capitalize_name(st.get("custom_name")) or get_casual_name(first_name) or ""
+
+            lisa_mood_key = get_lisa_mood()
+            lisa_mood_data = LISA_MOODS.get(lisa_mood_key, LISA_MOODS["playful"])
+
+            from gpt import generate_challenge
+            challenge_text = await generate_challenge(
+                user_name=display_name,
+                user_level=user_level,
+                lisa_mood_prompt=lisa_mood_data["prompt_mod"],
+                memory=memory,
+            )
+
+            active_games[uid] = {
+                "type": "challenge",
+                "challenge": challenge_text,
+            }
+            set_last_challenge_date(uid, today_str)
+
+            await context.bot.send_message(chat_id=cid, text=f"🎯 челлендж от Лизы:\n\n{challenge_text}")
+            logger.info(f"Daily challenge sent to {user_id} ({first_name})")
+
+            await asyncio.sleep(random.uniform(2, 10))
+
+        except TelegramError as e:
+            logger.warning(f"Challenge telegram error for {user_id}: {e}")
+        except Exception as e:
+            logger.error(f"Challenge error for {user_id}: {e}", exc_info=True)
