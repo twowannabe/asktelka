@@ -20,7 +20,7 @@ from config import (
 )
 from db import init_db
 from handlers import (
-    start_cmd, help_cmd, stats_cmd, level_cmd, achievements_cmd, top_cmd, story_cmd,
+    start_cmd, help_cmd, stats_cmd, level_cmd, achievements_cmd, profile_cmd, top_cmd, story_cmd,
     set_personality_cmd, dontwritefirst_cmd, writefirst_cmd,
     mood_cmd, clear_mood_cmd, mood_lisa_cmd, disable_cmd, reset_cmd,
     selfie_cmd, nudes_gen_cmd, circle_cmd, horoscope_cmd, diary_cmd, voice_cmd,
@@ -48,6 +48,7 @@ def main():
     application.add_handler(CommandHandler("stats", stats_cmd))
     application.add_handler(CommandHandler("level", level_cmd))
     application.add_handler(CommandHandler("achievements", achievements_cmd))
+    application.add_handler(CommandHandler("profile", profile_cmd))
     application.add_handler(CommandHandler("top", top_cmd))
     application.add_handler(CommandHandler("selfie", selfie_cmd))
     application.add_handler(CommandHandler("circle", circle_cmd))

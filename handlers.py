@@ -10,13 +10,15 @@ import time
 import tempfile
 from datetime import datetime, timezone
 
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatAction, ParseMode
 from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
+from urllib.parse import urlencode
+
 from config import (
-    LEVELS, LOCAL_TZ,
+    LEVELS, LOCAL_TZ, WEBAPP_URL,
     NUDES_KEYWORDS, NUDES_THRESHOLD, NUDES_THRESHOLD_BY_LEVEL, NUDES_TEASE_REPLIES, NUDES_SEND_REPLIES,
     EMOJI_REACTION_CHANCE, REACTION_EMOJIS, CHEAP_REACTION_CHANCE, CHEAP_REACTIONS,
     MEDIA_REACTIONS, PHOTO_REACTION_CHANCE_GROUP, PHOTO_REACTION_CHANCE_PRIVATE,
@@ -81,33 +83,36 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = (
-        "команды:\n"
-        "/start — начать\n"
-        "/help — помощь\n"
-        "/disable — выключить бота в этом чате\n"
-        "/reset — сбросить историю GPT\n"
-        "/set_personality <текст> — задать стиль общения (с флиртом)\n"
-        "/dontwritefirst — не писать первой (для тебя)\n"
-        "/writefirst — снова можно писать первой\n"
-        "/mood — показать, что я запомнила про твоё настроение\n"
-        "/clear_mood — очистить память настроения\n"
-        "/stats — статистика общения с Лизой\n"
-        "/level — твой уровень и XP\n"
-        "/achievements — твои ачивки\n"
-        "/top — рейтинг обожателей Лизы 🏆\n"
-        "/selfie [подсказка] — селфи от Лизы 📸\n"
-        "/nudes [описание] — фото от Лизы 🔞\n"
-        "/circle — кружочек от Лизы 🎥\n"
-        "/horoscope [знак] — гороскоп от Лизы 🔮\n"
-        "/voice [--стиль] текст — Лиза зачитает текст 🎙\n"
-        "/story — мини-сюжет с Лизой 💫\n"
-        "/diary — дневник отношений с Лизой 📖\n"
-        "/mood_lisa — узнать настроение Лизы\n\n"
+        "💛 я Лиза — твоя виртуальная подруга\n\n"
+        "📱 основное:\n"
+        "/start — начать общение\n"
+        "/stats — статистика\n"
+        "/level — уровень и XP\n"
+        "/achievements — ачивки\n"
+        "/profile — мой профиль 🪪\n"
+        "/top — рейтинг обожателей 🏆\n"
+        "/diary — дневник отношений 📖\n"
+        "/mood_lisa — моё настроение\n\n"
+        "📸 медиа:\n"
+        "/selfie [подсказка] — селфи 📸\n"
+        "/nudes [описание] — фото 🔞\n"
+        "/circle — видео-кружочек с lip-sync 🎥\n"
+        "/voice [--стиль] текст — голосовое 🎙\n"
+        "/horoscope [знак] — гороскоп 🔮\n"
+        "/story — интерактивный мини-сюжет 💫\n\n"
         "🎮 мини-игры:\n"
         "/truth — правда или действие (+2 XP)\n"
         "/guess — угадай число 1-100 (+3 XP)\n"
-        "/riddle — загадка от Лизы (+5 XP)\n"
-        "/quiz — викторина с кнопками (+4 XP)\n"
+        "/riddle — загадка (+5 XP)\n"
+        "/quiz — викторина с кнопками (+4 XP)\n\n"
+        "⚙️ настройки:\n"
+        "/set_personality <текст> — стиль общения\n"
+        "/dontwritefirst — не писать первой\n"
+        "/writefirst — снова писать первой\n"
+        "/mood — что я помню о твоём настроении\n"
+        "/clear_mood — очистить память настроения\n"
+        "/reset — сбросить историю\n"
+        "/disable — выключить в этом чате\n"
     )
     await update.message.reply_text(text)
 
@@ -291,6 +296,74 @@ async def achievements_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             lines.append(f"⬜ {ach['emoji']} {ach['title']} — {ach['desc']}")
     text = "🏆 твои ачивки:\n\n" + "\n".join(lines)
     await update.message.reply_text(text)
+
+
+# ---------------------- PROFILE (WEBAPP) ----------------------
+
+async def profile_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    user_name = get_casual_name(update.effective_user.first_name or update.effective_user.username or "")
+
+    info = get_user_level_info(user_id)
+    xp = info["xp"]
+    level = info["level"]
+    title = info["title"]
+    streak = info["streak_days"]
+
+    next_xp = get_next_level_xp(level)
+    xp_base = 0
+    for l, t, _ in LEVELS:
+        if l == level:
+            xp_base = t
+            break
+
+    earned = get_user_achievements(user_id)
+
+    if WEBAPP_URL:
+        params = urlencode({
+            "name": user_name,
+            "level": level,
+            "title": title,
+            "xp": xp,
+            "xp_base": xp_base,
+            "xp_next": next_xp or xp,
+            "streak": streak,
+            "achievements": ",".join(earned),
+        })
+        url = f"{WEBAPP_URL}?{params}"
+
+        from telegram import WebAppInfo
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("открыть профиль 💛", web_app=WebAppInfo(url=url))
+        ]])
+        await update.message.reply_text("нажми, чтобы открыть профиль 👇", reply_markup=keyboard)
+    else:
+        # Fallback: text response (like /level + /achievements)
+        if next_xp:
+            progress = xp - xp_base
+            needed = next_xp - xp_base
+            pct = min(int(progress / needed * 10), 10) if needed > 0 else 10
+            bar = "▓" * pct + "░" * (10 - pct)
+            next_line = f"до уровня {level + 1}: [{bar}] {xp}/{next_xp} XP"
+        else:
+            next_line = "максимальный уровень! 👑"
+
+        streak_line = f"\n🔥 Стрик: {streak} дн." if streak >= 2 else ""
+
+        ach_lines = []
+        for key, ach in ACHIEVEMENTS.items():
+            if key in earned:
+                ach_lines.append(f"✅ {ach['emoji']} {ach['title']}")
+            else:
+                ach_lines.append(f"⬜ {ach['emoji']} {ach['title']}")
+
+        text = (
+            f"✨ {user_name} — Уровень {level} ({title})\n"
+            f"⭐ {xp} XP\n"
+            f"{next_line}{streak_line}\n\n"
+            f"🏆 ачивки:\n" + "\n".join(ach_lines)
+        )
+        await update.message.reply_text(text)
 
 
 # ---------------------- TOP ----------------------

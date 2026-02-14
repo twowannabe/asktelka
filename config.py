@@ -81,6 +81,7 @@ VOICE_DIR_EVENING = os.path.join(os.path.dirname(__file__), "voices", "checkin_e
 SELFIES_DIR = os.path.join(os.path.dirname(__file__), "selfies")
 VIDEO_NOTES_DIR = os.path.join(os.path.dirname(__file__), "video_notes")
 NEWS_RSS_URL = config("NEWS_RSS_URL", default="")
+WEBAPP_URL = config("WEBAPP_URL", default="")
 
 # ---------------------- LEVEL SYSTEM ----------------------
 XP_PER_TEXT = 1
