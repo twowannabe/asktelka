@@ -19,7 +19,7 @@ from config import (
     LEVELS, LOCAL_TZ,
     NUDES_KEYWORDS, NUDES_THRESHOLD, NUDES_THRESHOLD_BY_LEVEL, NUDES_TEASE_REPLIES, NUDES_SEND_REPLIES,
     EMOJI_REACTION_CHANCE, REACTION_EMOJIS, CHEAP_REACTION_CHANCE, CHEAP_REACTIONS,
-    MEDIA_REACTIONS, MEDIA_REACTION_CHANCE,
+    MEDIA_REACTIONS, PHOTO_REACTION_CHANCE_GROUP, PHOTO_REACTION_CHANCE_PRIVATE,
     RANDOM_GPT_RESPONSE_CHANCE,
     GROUP_COMMENT_CHANCE, GROUP_COMMENT_BUFFER_SIZE, chat_message_buffer,
     JEALOUSY_MIN_LEVEL, JEALOUSY_THRESHOLD, JEALOUSY_CHANCE, JEALOUSY_COOLDOWN_SEC,
@@ -1096,7 +1096,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     sent_as_voice = False
     voice_chance = await run_sync(get_user_voice_chance, user_id)
-    if force_voice or (user_level >= LEVEL_VOICE_UNLOCK and random.random() < voice_chance):
+    if force_voice or random.random() < voice_chance:
         voice_data = await text_to_voice(reply, style=voice_style)
         if voice_data:
             try:
@@ -1209,7 +1209,9 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if chat.type != "private" and not is_bot_enabled(chat_id):
         return
 
-    if chat.type != "private" and random.random() > MEDIA_REACTION_CHANCE:
+    is_private = chat.type == "private"
+    reaction_chance = PHOTO_REACTION_CHANCE_PRIVATE if is_private else PHOTO_REACTION_CHANCE_GROUP
+    if random.random() > reaction_chance:
         return
 
     # Try vision analysis for photos
@@ -1228,7 +1230,7 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
             if reply:
                 await asyncio.sleep(random.uniform(1, 3))
-                if chat.type == "private":
+                if is_private:
                     await context.bot.send_message(chat_id=chat_id, text=reply)
                 else:
                     await update.message.reply_text(reply, reply_to_message_id=update.message.message_id)
@@ -1249,7 +1251,7 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     reply = random.choice(MEDIA_REACTIONS)
     await asyncio.sleep(random.uniform(1, 3))
     try:
-        if chat.type == "private":
+        if is_private:
             await context.bot.send_message(chat_id=chat_id, text=reply)
         else:
             await update.message.reply_text(reply, reply_to_message_id=update.message.message_id)
