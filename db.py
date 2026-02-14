@@ -4,6 +4,7 @@ import random
 from datetime import datetime
 
 import psycopg2
+from psycopg2 import pool
 
 from config import (
     DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD,
@@ -13,15 +14,40 @@ from config import (
 )
 from utils import local_date_str, local_now
 
+_connection_pool = None
+
+
+def _get_pool():
+    global _connection_pool
+    if _connection_pool is None:
+        _connection_pool = pool.ThreadedConnectionPool(
+            minconn=2,
+            maxconn=10,
+            dbname=DB_NAME,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            host=DB_HOST,
+            port=DB_PORT,
+        )
+    return _connection_pool
+
 
 def get_db_connection():
-    return psycopg2.connect(
-        dbname=DB_NAME,
-        user=DB_USER,
-        password=DB_PASSWORD,
-        host=DB_HOST,
-        port=DB_PORT,
-    )
+    return _get_pool().getconn()
+
+
+def release_db_connection(conn):
+    try:
+        _get_pool().putconn(conn)
+    except Exception:
+        pass
+
+
+async def run_sync(func, *args, **kwargs):
+    """Run a blocking DB function in a thread pool to avoid blocking the event loop."""
+    import asyncio
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, lambda: func(*args, **kwargs))
 
 
 def init_db():
@@ -142,7 +168,7 @@ def init_db():
 
         conn.commit()
         cur.close()
-        conn.close()
+        release_db_connection(conn)
         logger.info("DB initialized")
     except Exception as e:
         logger.error(f"DB init error: {e}", exc_info=True)
@@ -159,7 +185,7 @@ def log_interaction(user_id, user_username, user_message, gpt_reply):
         """, (user_id, user_username, user_message, gpt_reply, ts))
         conn.commit()
         cur.close()
-        conn.close()
+        release_db_connection(conn)
     except Exception as e:
         logger.error(f"DB log_interaction error: {e}", exc_info=True)
 
@@ -174,7 +200,7 @@ def save_message(user_id: int, role: str, content: str, chat_id: int = None, sen
         )
         conn.commit()
         cur.close()
-        conn.close()
+        release_db_connection(conn)
     except Exception as e:
         logger.error(f"DB save_message error: {e}", exc_info=True)
 
@@ -189,7 +215,7 @@ def load_context(user_id: int, limit: int = 10) -> list[dict]:
         )
         rows = cur.fetchall()
         cur.close()
-        conn.close()
+        release_db_connection(conn)
         return [{"role": r[0], "content": r[1]} for r in reversed(rows)]
     except Exception as e:
         logger.error(f"DB load_context error: {e}", exc_info=True)
@@ -206,7 +232,7 @@ def load_group_context(chat_id: int, limit: int = 20) -> list[dict]:
         )
         rows = cur.fetchall()
         cur.close()
-        conn.close()
+        release_db_connection(conn)
         result = []
         for role, content, sender_name in reversed(rows):
             if role == "user" and sender_name:
@@ -226,7 +252,7 @@ def clear_context(user_id: int):
         cur.execute("DELETE FROM conversation_history WHERE user_id=%s", (user_id,))
         conn.commit()
         cur.close()
-        conn.close()
+        release_db_connection(conn)
     except Exception as e:
         logger.error(f"DB clear_context error: {e}", exc_info=True)
 
@@ -238,7 +264,7 @@ def load_user_personality_from_db(user_id: int) -> str | None:
         cur.execute("SELECT personality FROM user_personalities WHERE user_id=%s", (user_id,))
         row = cur.fetchone()
         cur.close()
-        conn.close()
+        release_db_connection(conn)
         return row[0] if row else None
     except Exception as e:
         logger.error(f"DB load personality error: {e}")
@@ -256,7 +282,7 @@ def upsert_user_personality(user_id: int, personality: str):
         """, (user_id, personality))
         conn.commit()
         cur.close()
-        conn.close()
+        release_db_connection(conn)
     except Exception as e:
         logger.error(f"DB upsert personality error: {e}", exc_info=True)
 
@@ -277,7 +303,7 @@ def update_last_interaction(user_id: int, chat_id: int, first_name: str = "", us
         """, (user_id, chat_id, first_name, username, chat_type))
         conn.commit()
         cur.close()
-        conn.close()
+        release_db_connection(conn)
     except Exception as e:
         logger.error(f"DB update last interaction error: {e}", exc_info=True)
 
@@ -293,7 +319,7 @@ def ensure_user_state_row(user_id: int):
         """, (user_id,))
         conn.commit()
         cur.close()
-        conn.close()
+        release_db_connection(conn)
     except Exception as e:
         logger.error(f"DB ensure user_state error: {e}", exc_info=True)
 
@@ -310,7 +336,7 @@ def set_do_not_write_first(user_id: int, value: bool):
         """, (value, user_id))
         conn.commit()
         cur.close()
-        conn.close()
+        release_db_connection(conn)
     except Exception as e:
         logger.error(f"DB set do_not_write_first error: {e}", exc_info=True)
 
@@ -328,7 +354,7 @@ def get_user_settings(user_id: int) -> dict:
         """, (user_id,))
         row = cur.fetchone()
         cur.close()
-        conn.close()
+        release_db_connection(conn)
 
         if not row:
             return {
@@ -372,7 +398,7 @@ def set_last_checkin_date(user_id: int, date_str: str):
         """, (date_str, user_id))
         conn.commit()
         cur.close()
-        conn.close()
+        release_db_connection(conn)
     except Exception as e:
         logger.error(f"DB set last_checkin_date error: {e}", exc_info=True)
 
@@ -389,7 +415,7 @@ def set_cheap_cooldown(user_id: int, until_epoch: int):
         """, (until_epoch, user_id))
         conn.commit()
         cur.close()
-        conn.close()
+        release_db_connection(conn)
     except Exception as e:
         logger.error(f"DB set cheap cooldown error: {e}", exc_info=True)
 
@@ -406,7 +432,7 @@ def set_mood(user_id: int, mood_label: str, mood_note: str):
         """, (mood_label, mood_note, user_id))
         conn.commit()
         cur.close()
-        conn.close()
+        release_db_connection(conn)
     except Exception as e:
         logger.error(f"DB set mood error: {e}", exc_info=True)
 
@@ -440,7 +466,7 @@ def get_user_level_info(user_id: int) -> dict:
         """, (user_id,))
         row = cur.fetchone()
         cur.close()
-        conn.close()
+        release_db_connection(conn)
         if row:
             lvl, title = get_level_for_xp(row[0])
             return {"xp": row[0], "level": lvl, "streak_days": row[2],
@@ -489,7 +515,7 @@ def add_xp(user_id: int, base_xp: int) -> tuple[int, int, bool]:
         """, (new_xp, new_level, streak, today, user_id))
         conn.commit()
         cur.close()
-        conn.close()
+        release_db_connection(conn)
         return new_xp, new_level, leveled_up
     except Exception as e:
         logger.error(f"DB add_xp error: {e}", exc_info=True)
@@ -523,7 +549,7 @@ def get_user_memory(user_id: int) -> str:
         cur.execute("SELECT summary FROM user_memory WHERE user_id=%s", (user_id,))
         row = cur.fetchone()
         cur.close()
-        conn.close()
+        release_db_connection(conn)
         return row[0] if row else ""
     except Exception as e:
         logger.error(f"DB get_user_memory error: {e}", exc_info=True)
@@ -544,7 +570,7 @@ def save_user_memory(user_id: int, summary: str):
         """, (user_id, summary))
         conn.commit()
         cur.close()
-        conn.close()
+        release_db_connection(conn)
     except Exception as e:
         logger.error(f"DB save_user_memory error: {e}", exc_info=True)
 
@@ -563,7 +589,7 @@ def increment_memory_counter(user_id: int) -> int:
         count = cur.fetchone()[0]
         conn.commit()
         cur.close()
-        conn.close()
+        release_db_connection(conn)
         return count
     except Exception as e:
         logger.error(f"DB increment_memory_counter error: {e}", exc_info=True)
@@ -577,7 +603,7 @@ def get_user_achievements(user_id: int) -> list[str]:
         cur.execute("SELECT achievement_key FROM user_achievements WHERE user_id=%s", (user_id,))
         keys = [row[0] for row in cur.fetchall()]
         cur.close()
-        conn.close()
+        release_db_connection(conn)
         return keys
     except Exception as e:
         logger.error(f"DB get_user_achievements error: {e}", exc_info=True)
@@ -595,7 +621,7 @@ def grant_achievement(user_id: int, key: str) -> bool:
         is_new = cur.rowcount > 0
         conn.commit()
         cur.close()
-        conn.close()
+        release_db_connection(conn)
         return is_new
     except Exception as e:
         logger.error(f"DB grant_achievement error: {e}", exc_info=True)
@@ -610,7 +636,7 @@ def get_user_zodiac(user_id: int) -> str | None:
         cur.execute("SELECT zodiac_sign FROM user_state WHERE user_id=%s", (user_id,))
         row = cur.fetchone()
         cur.close()
-        conn.close()
+        release_db_connection(conn)
         return row[0] if row else None
     except Exception as e:
         logger.error(f"DB get_user_zodiac error: {e}", exc_info=True)
@@ -625,7 +651,7 @@ def set_user_zodiac(user_id: int, sign: str):
         cur.execute("UPDATE user_state SET zodiac_sign=%s WHERE user_id=%s", (sign, user_id))
         conn.commit()
         cur.close()
-        conn.close()
+        release_db_connection(conn)
     except Exception as e:
         logger.error(f"DB set_user_zodiac error: {e}", exc_info=True)
 
@@ -638,7 +664,7 @@ def get_last_horoscope_date(user_id: int) -> str | None:
         cur.execute("SELECT last_horoscope_date FROM user_state WHERE user_id=%s", (user_id,))
         row = cur.fetchone()
         cur.close()
-        conn.close()
+        release_db_connection(conn)
         return row[0] if row else None
     except Exception as e:
         logger.error(f"DB get_last_horoscope_date error: {e}", exc_info=True)
@@ -653,7 +679,7 @@ def set_last_horoscope_date(user_id: int, date_str: str):
         cur.execute("UPDATE user_state SET last_horoscope_date=%s WHERE user_id=%s", (date_str, user_id))
         conn.commit()
         cur.close()
-        conn.close()
+        release_db_connection(conn)
     except Exception as e:
         logger.error(f"DB set_last_horoscope_date error: {e}", exc_info=True)
 
@@ -665,7 +691,7 @@ def get_lisa_mood() -> str:
         cur.execute("SELECT value FROM lisa_state WHERE key='mood'")
         row = cur.fetchone()
         cur.close()
-        conn.close()
+        release_db_connection(conn)
         return row[0] if row else "playful"
     except Exception as e:
         logger.error(f"DB get_lisa_mood error: {e}", exc_info=True)
@@ -683,7 +709,7 @@ def set_lisa_mood(mood: str):
         """, (mood,))
         conn.commit()
         cur.close()
-        conn.close()
+        release_db_connection(conn)
     except Exception as e:
         logger.error(f"DB set_lisa_mood error: {e}", exc_info=True)
 
@@ -695,7 +721,7 @@ def get_last_contacts() -> list[tuple]:
         cur.execute("SELECT user_id, chat_id, last_interaction, COALESCE(first_name, ''), COALESCE(username, ''), COALESCE(chat_type, 'private') FROM user_last_contact")
         rows = cur.fetchall()
         cur.close()
-        conn.close()
+        release_db_connection(conn)
         return rows
     except Exception as e:
         logger.error(f"DB get last contacts error: {e}", exc_info=True)

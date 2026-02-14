@@ -36,7 +36,8 @@ from config import (
     logger,
 )
 from db import (
-    get_db_connection, log_interaction, save_message, load_context, load_group_context, clear_context,
+    get_db_connection, release_db_connection,
+    log_interaction, save_message, load_context, load_group_context, clear_context,
     load_user_personality_from_db, upsert_user_personality,
     update_last_interaction, ensure_user_state_row,
     set_do_not_write_first, get_user_settings, set_cheap_cooldown, set_mood,
@@ -45,6 +46,7 @@ from db import (
     get_user_memory, save_user_memory, increment_memory_counter,
     get_user_achievements, grant_achievement,
     get_user_zodiac, set_user_zodiac, get_last_horoscope_date, set_last_horoscope_date,
+    run_sync,
 )
 from gpt import ask_chatgpt, text_to_voice, get_ogg_duration, transcribe_voice, summarize_memory, generate_chat_comment, generate_jealous_comment, react_to_photo, generate_selfie, generate_horoscope
 from games import handle_game_response
@@ -449,8 +451,8 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     user_first_name = user.first_name or user_username or ""
-    update_last_interaction(user_id, chat_id, user_first_name, user_username, chat.type)
-    ensure_user_state_row(user_id)
+    await run_sync(update_last_interaction, user_id, chat_id, user_first_name, user_username, chat.type)
+    await run_sync(ensure_user_state_row, user_id)
 
     # Achievement: night_owl
     if 0 <= local_now().hour < 5:
@@ -482,31 +484,31 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     mood_label, mood_note = classify_mood(text)
     if mood_label:
-        set_mood(user_id, mood_label, mood_note)
+        await run_sync(set_mood, user_id, mood_label, mood_note)
 
-    user_level_info = get_user_level_info(user_id)
+    user_level_info = await run_sync(get_user_level_info, user_id)
     user_level = user_level_info["level"]
 
-    personality = user_personalities.get(user_id) or load_user_personality_from_db(user_id) or ""
-    st = get_user_settings(user_id)
+    personality = user_personalities.get(user_id) or await run_sync(load_user_personality_from_db, user_id) or ""
+    st = await run_sync(get_user_settings, user_id)
     user_mood = st.get("mood_label") or ""
 
-    lisa_mood_key = get_lisa_mood()
+    lisa_mood_key = await run_sync(get_lisa_mood)
     lisa_mood_data = LISA_MOODS.get(lisa_mood_key, LISA_MOODS["playful"])
 
     is_group = chat.type != "private"
 
-    save_message(user_id, "user", text, chat_id=chat_id, sender_name=user_first_name)
+    await run_sync(save_message, user_id, "user", text, chat_id, user_first_name)
 
-    count = increment_memory_counter(user_id)
+    count = await run_sync(increment_memory_counter, user_id)
     if count >= MEMORY_SUMMARIZE_EVERY:
         asyncio.create_task(_update_memory(user_id))
 
-    memory = get_user_memory(user_id)
+    memory = await run_sync(get_user_memory, user_id)
     if is_group:
-        messages = load_group_context(chat_id, limit=20)
+        messages = await run_sync(load_group_context, chat_id, 20)
     else:
-        messages = load_context(user_id, limit=10)
+        messages = await run_sync(load_context, user_id, 10)
 
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
     await asyncio.sleep(random.uniform(1, 2))
@@ -525,7 +527,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if not reply.strip():
         reply = "ммм… напиши ещё 😅"
 
-    save_message(user_id, "assistant", reply, chat_id=chat_id, sender_name="Лиза")
+    await run_sync(save_message, user_id, "assistant", reply, chat_id, "Лиза")
 
     reply_to_message_id = update.message.message_id
 
@@ -553,14 +555,14 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         except Exception as e:
             logger.error(f"Telegram send error: {e}", exc_info=True)
 
-    log_interaction(user_id, user_username, f"[voice] {text}", f"{'[voice] ' if sent_as_voice else ''}{reply}")
+    await run_sync(log_interaction, user_id, user_username, f"[voice] {text}", f"{'[voice] ' if sent_as_voice else ''}{reply}")
 
-    _, new_level, leveled_up = add_xp(user_id, XP_PER_VOICE)
+    _, new_level, leveled_up = await run_sync(add_xp, user_id, XP_PER_VOICE)
     if leveled_up:
         await send_level_up(context.bot, chat_id, new_level, chat.type)
 
     # Achievement: streak_7
-    if get_user_level_info(user_id)["streak_days"] >= 7:
+    if (await run_sync(get_user_level_info, user_id))["streak_days"] >= 7:
         await _check_and_grant(context.bot, chat_id, user_id, "streak_7")
 
 
@@ -584,8 +586,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     user_first_name = user.first_name or user_username or ""
 
-    update_last_interaction(user_id, chat_id, user_first_name, user_username, chat.type)
-    ensure_user_state_row(user_id)
+    await run_sync(update_last_interaction, user_id, chat_id, user_first_name, user_username, chat.type)
+    await run_sync(ensure_user_state_row, user_id)
 
     # Achievement: night_owl
     if 0 <= local_now().hour < 5:
@@ -593,7 +595,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     mood_label, mood_note = classify_mood(text)
     if mood_label:
-        set_mood(user_id, mood_label, mood_note)
+        await run_sync(set_mood, user_id, mood_label, mood_note)
 
     if user_id in active_games and active_games[user_id]["type"] != "quiz":
         handled = await handle_game_response(user_id, text, update, context)
@@ -601,7 +603,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             return
 
     # Nudes request detection
-    user_level_info = get_user_level_info(user_id)
+    user_level_info = await run_sync(get_user_level_info, user_id)
     user_level = user_level_info["level"]
 
     text_lower = text.lower()
@@ -620,10 +622,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     with open(photo_path, "rb") as ph:
                         await context.bot.send_photo(chat_id=chat_id, photo=ph, caption=caption)
                     nudes_request_count[user_id] = 0
-                    log_interaction(user_id, user_username, text, f"[nudes] {caption}")
+                    await run_sync(log_interaction, user_id, user_username, text, f"[nudes] {caption}")
                     # Achievement: first_nudes
                     await _check_and_grant(context.bot, chat_id, user_id, "first_nudes")
-                    _, new_level, leveled_up = add_xp(user_id, XP_PER_NUDES)
+                    _, new_level, leveled_up = await run_sync(add_xp, user_id, XP_PER_NUDES)
                     if leveled_up:
                         await send_level_up(context.bot, chat_id, new_level, chat.type)
                     return
@@ -637,7 +639,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 await context.bot.send_message(chat_id=chat_id, text=tease)
             else:
                 await update.message.reply_text(tease, reply_to_message_id=update.message.message_id)
-            log_interaction(user_id, user_username, text, f"[tease] {tease}")
+            await run_sync(log_interaction, user_id, user_username, text, f"[tease] {tease}")
             return
 
     bot_username = context.bot.username
@@ -725,7 +727,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             except Exception as e:
                 logger.debug(f"Emoji reaction failed: {e}")
 
-        st = get_user_settings(user_id)
+        st = await run_sync(get_user_settings, user_id)
         now_epoch = int(datetime.now(timezone.utc).timestamp())
         if now_epoch < int(st["cheap_reaction_cooldown_until"] or 0):
             return
@@ -738,8 +740,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             try:
                 await update.message.reply_text(reply, reply_to_message_id=reply_to_message_id)
                 cooldown = now_epoch + random.randint(10 * 60, 25 * 60)
-                set_cheap_cooldown(user_id, cooldown)
-                log_interaction(user_id, user_username, text, f"[cheap]{reply}")
+                await run_sync(set_cheap_cooldown, user_id, cooldown)
+                await run_sync(log_interaction, user_id, user_username, text, f"[cheap]{reply}")
             except Exception as e:
                 logger.error(f"Cheap reply send error: {e}")
         return
@@ -756,24 +758,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     is_group = chat.type != "private"
 
-    personality = user_personalities.get(user_id) or load_user_personality_from_db(user_id) or ""
-    st = get_user_settings(user_id)
+    personality = user_personalities.get(user_id) or await run_sync(load_user_personality_from_db, user_id) or ""
+    st = await run_sync(get_user_settings, user_id)
     user_mood = st.get("mood_label") or ""
 
-    lisa_mood_key = get_lisa_mood()
+    lisa_mood_key = await run_sync(get_lisa_mood)
     lisa_mood_data = LISA_MOODS.get(lisa_mood_key, LISA_MOODS["playful"])
 
-    save_message(user_id, "user", text_to_process, chat_id=chat_id, sender_name=user_first_name)
+    await run_sync(save_message, user_id, "user", text_to_process, chat_id, user_first_name)
 
-    count = increment_memory_counter(user_id)
+    count = await run_sync(increment_memory_counter, user_id)
     if count >= MEMORY_SUMMARIZE_EVERY:
         asyncio.create_task(_update_memory(user_id))
 
-    memory = get_user_memory(user_id)
+    memory = await run_sync(get_user_memory, user_id)
     if is_group:
-        messages = load_group_context(chat_id, limit=20)
+        messages = await run_sync(load_group_context, chat_id, 20)
     else:
-        messages = load_context(user_id, limit=10)
+        messages = await run_sync(load_context, user_id, 10)
 
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
     await asyncio.sleep(random.uniform(1, 4))
@@ -792,7 +794,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not reply.strip():
         reply = "ммм… напиши ещё 😅"
 
-    save_message(user_id, "assistant", reply, chat_id=chat_id, sender_name="Лиза")
+    await run_sync(save_message, user_id, "assistant", reply, chat_id, "Лиза")
 
     # Detect requested voice style
     voice_style = ""
@@ -807,7 +809,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         force_voice = True
 
     sent_as_voice = False
-    voice_chance = get_user_voice_chance(user_id)
+    voice_chance = await run_sync(get_user_voice_chance, user_id)
     if force_voice or (user_level >= LEVEL_VOICE_UNLOCK and random.random() < voice_chance):
         voice_data = await text_to_voice(reply, style=voice_style)
         if voice_data:
@@ -841,9 +843,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         except Exception as e:
             logger.error(f"Telegram send error: {e}", exc_info=True)
 
-    log_interaction(user_id, user_username, text_to_process, f"{'[voice] ' if sent_as_voice else ''}{reply}")
+    await run_sync(log_interaction, user_id, user_username, text_to_process, f"{'[voice] ' if sent_as_voice else ''}{reply}")
 
-    _, new_level, leveled_up = add_xp(user_id, XP_PER_TEXT)
+    _, new_level, leveled_up = await run_sync(add_xp, user_id, XP_PER_TEXT)
     if leveled_up:
         await send_level_up(context.bot, chat_id, new_level, chat.type)
 
@@ -854,14 +856,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         cur.execute("SELECT COUNT(*) FROM askgbt_logs WHERE user_id = %s", (user_id,))
         msg_count = cur.fetchone()[0]
         cur.close()
-        conn.close()
+        release_db_connection(conn)
         if msg_count >= 100:
             await _check_and_grant(context.bot, chat_id, user_id, "msg_100")
     except Exception as e:
         logger.error(f"Achievement msg_100 check error: {e}", exc_info=True)
 
     # Achievement: streak_7
-    if get_user_level_info(user_id)["streak_days"] >= 7:
+    if (await run_sync(get_user_level_info, user_id))["streak_days"] >= 7:
         await _check_and_grant(context.bot, chat_id, user_id, "streak_7")
 
     # Spontaneous selfie (private chat only, level gated)
