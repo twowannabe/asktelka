@@ -64,11 +64,12 @@ def main():
 
     print(f"Uploading {ARCHIVE_PATH} to Replicate...")
     with open(ARCHIVE_PATH, "rb") as f:
-        file_output = replicate.files.create(f)
+        file_output = replicate.files.create(f, filename="Archive.zip", content_type="application/zip")
     file_url = file_output.urls["get"]
     print(f"Uploaded: {file_url}")
 
     TRAINING_PARAMS["input_images"] = file_url
+    TRAINING_PARAMS["input_images_filetype"] = "zip"
 
     # Create destination model if it doesn't exist
     owner, model_name = DESTINATION.split("/")
