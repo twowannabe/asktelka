@@ -8,8 +8,8 @@ from psycopg2 import pool
 
 from config import (
     DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD,
-    LEVELS, LEVEL_UP_MESSAGES, LEVEL_VOICE_BOOST,
-    XP_STREAK_MULTIPLIER, VOICE_REPLY_CHANCE,
+    LEVELS, LEVEL_UP_MESSAGES,
+    XP_STREAK_MULTIPLIER, VOICE_CHANCE_BY_LEVEL,
     disabled_chats, logger,
 )
 from utils import local_date_str, local_now
@@ -541,9 +541,7 @@ async def send_level_up(bot, chat_id: int, level: int, chat_type: str = "private
 
 def get_user_voice_chance(user_id: int) -> float:
     info = get_user_level_info(user_id)
-    if info["level"] >= LEVEL_VOICE_BOOST:
-        return VOICE_REPLY_CHANCE * 1.5
-    return VOICE_REPLY_CHANCE
+    return VOICE_CHANCE_BY_LEVEL.get(info["level"], 0.2)
 
 
 def get_user_memory(user_id: int) -> str:
