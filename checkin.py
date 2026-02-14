@@ -20,7 +20,7 @@ from config import (
     LONELY_MIN_SILENCE_HOURS, LONELY_CHECKIN_CHANCE,
     STORY_TEMPLATES, STORY_CHECKIN_CHANCE, LEVEL_STORY_UNLOCK,
     active_games,
-    get_casual_name,
+    get_casual_name, _capitalize_name,
     client, logger,
 )
 from db import (
@@ -191,7 +191,7 @@ async def check_lonely_users(context: CallbackContext) -> None:
                     and random.random() < STORY_CHECKIN_CHANCE):
                 try:
                     from handlers import _start_story
-                    checkin_display_name = st.get("custom_name") or get_casual_name(first_name)
+                    checkin_display_name = _capitalize_name(st.get("custom_name")) or get_casual_name(first_name)
                     started = await _start_story(
                         int(user_id), int(chat_id), checkin_display_name,
                         context.bot, checkin_user_level,
@@ -203,7 +203,7 @@ async def check_lonely_users(context: CallbackContext) -> None:
                 except Exception as e:
                     logger.error(f"Story checkin error for {user_id}: {e}", exc_info=True)
 
-            display_name = st.get("custom_name") or get_casual_name(first_name)
+            display_name = _capitalize_name(st.get("custom_name")) or get_casual_name(first_name)
             voice_ok = st.get("voice_enabled", True)
 
             photos = [f for f in os.listdir(SELFIES_DIR) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))] if os.path.isdir(SELFIES_DIR) else []
@@ -313,7 +313,7 @@ async def send_ritual(context: CallbackContext) -> None:
             level_info = get_user_level_info(int(user_id))
             user_level = level_info["level"]
             mood_label = st.get("mood_label")
-            display_name = st.get("custom_name") or get_casual_name(first_name)
+            display_name = _capitalize_name(st.get("custom_name")) or get_casual_name(first_name)
             voice_ok = st.get("voice_enabled", True)
 
             lisa_mood_key = get_lisa_mood()
@@ -411,7 +411,7 @@ async def send_lisa_thoughts(context: CallbackContext) -> None:
             level_info = get_user_level_info(int(user_id))
             user_level = level_info["level"]
             memory = get_user_memory(int(user_id))
-            display_name = st.get("custom_name") or get_casual_name(first_name) or ""
+            display_name = _capitalize_name(st.get("custom_name")) or get_casual_name(first_name) or ""
             voice_ok = st.get("voice_enabled", True)
 
             lisa_mood_key = get_lisa_mood()

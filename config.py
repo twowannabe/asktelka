@@ -372,11 +372,19 @@ NICKNAME_MAP = {
 }
 
 
+def _capitalize_name(name: str) -> str:
+    """Ensure first letter is uppercase (works for Cyrillic too)."""
+    if not name:
+        return name
+    return name[0].upper() + name[1:]
+
+
 def get_casual_name(first_name: str) -> str:
-    """Convert formal first name to casual/diminutive form."""
+    """Convert formal first name to casual/diminutive form, always capitalized."""
     if not first_name:
         return first_name
-    return NICKNAME_MAP.get(first_name.lower().strip(), first_name)
+    result = NICKNAME_MAP.get(first_name.lower().strip(), first_name)
+    return _capitalize_name(result)
 
 
 # ---------------------- LISA MOOD ----------------------

@@ -37,7 +37,7 @@ from config import (
     ACHIEVEMENTS, ACHIEVEMENT_MESSAGES,
     LISA_MOODS, PERSONALITY_PRESETS,
     disabled_chats, user_personalities, nudes_request_count, active_games,
-    get_casual_name,
+    get_casual_name, _capitalize_name,
     logger,
 )
 from db import (
@@ -392,8 +392,8 @@ async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
         logger.warning(f"Invalid webapp data from user {user_id}: {raw!r}")
         return
 
-    # custom_name
-    custom_name = (data.get("custom_name") or "").strip()[:50]
+    # custom_name — always capitalize
+    custom_name = _capitalize_name((data.get("custom_name") or "").strip()[:50])
     set_custom_name(user_id, custom_name)
 
     # do_not_write_first
@@ -840,7 +840,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     # Use custom_name if set, otherwise get_casual_name
     _st_voice = await run_sync(get_user_settings, user_id)
-    user_first_name = _st_voice.get("custom_name") or get_casual_name(user.first_name or user_username or "")
+    user_first_name = _capitalize_name(_st_voice.get("custom_name")) or get_casual_name(user.first_name or user_username or "")
 
     # Achievement: night_owl
     if 0 <= local_now().hour < 5:
@@ -980,7 +980,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     # Use custom_name if set, otherwise get_casual_name
     _st_name = await run_sync(get_user_settings, user_id)
-    user_first_name = _st_name.get("custom_name") or get_casual_name(user_first_name)
+    user_first_name = _capitalize_name(_st_name.get("custom_name")) or get_casual_name(user_first_name)
 
     # Achievement: night_owl
     if 0 <= local_now().hour < 5:
