@@ -239,7 +239,7 @@ async def generate_horoscope(sign: str, user_level: int) -> str:
         return "звёзды молчат... попробуй позже 🌙"
 
 
-async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood_label: str = "", memory: str = "", user_level: int = 7, is_group: bool = False) -> str:
+async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood_label: str = "", lisa_mood: str = "", memory: str = "", user_level: int = 7, is_group: bool = False) -> str:
     try:
         name_part = ""
         if user_name and user_level >= 3:
@@ -252,6 +252,7 @@ async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood
         elif user_name:
             name_part = f" Пользователя зовут {user_name}."
         mood_part = f" (У пользователя сейчас настроение: {mood_label}. Учти это мягко.)" if mood_label else ""
+        lisa_mood_part = f" ({lisa_mood})" if lisa_mood else ""
 
         if personality:
             base = personality
@@ -267,7 +268,7 @@ async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood
             "Никогда не пиши звуковые эффекты и ролеплей-действия (ааах, мммм, шлёп, хлоп, муах и т.п.). "
             "Пиши как живой человек в мессенджере, а не как персонаж ролевой игры. "
             "ОБЯЗАТЕЛЬНО используй букву «ё» везде, где она нужна (ещё, всё, её, твоё, моё, горячёе, тёплый и т.д.). Никогда не заменяй «ё» на «е»."
-            f"{name_part}{mood_part}"
+            f"{name_part}{mood_part}{lisa_mood_part}"
         )
 
         if memory:

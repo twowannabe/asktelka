@@ -128,6 +128,14 @@ def init_db():
         )
         """)
 
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS lisa_state (
+            key TEXT PRIMARY KEY,
+            value TEXT,
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+        """)
+
         # Horoscope migrations
         cur.execute("ALTER TABLE user_state ADD COLUMN IF NOT EXISTS zodiac_sign TEXT")
         cur.execute("ALTER TABLE user_state ADD COLUMN IF NOT EXISTS last_horoscope_date TEXT")
@@ -648,6 +656,36 @@ def set_last_horoscope_date(user_id: int, date_str: str):
         conn.close()
     except Exception as e:
         logger.error(f"DB set_last_horoscope_date error: {e}", exc_info=True)
+
+
+def get_lisa_mood() -> str:
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT value FROM lisa_state WHERE key='mood'")
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        return row[0] if row else "playful"
+    except Exception as e:
+        logger.error(f"DB get_lisa_mood error: {e}", exc_info=True)
+        return "playful"
+
+
+def set_lisa_mood(mood: str):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO lisa_state (key, value, updated_at)
+            VALUES ('mood', %s, NOW())
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+        """, (mood,))
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        logger.error(f"DB set_lisa_mood error: {e}", exc_info=True)
 
 
 def get_last_contacts() -> list[tuple]:

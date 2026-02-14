@@ -10,12 +10,13 @@ from telegram.ext import CallbackContext
 from config import (
     NUDES_DIR, CHECKIN_PHOTO_CHANCE, CHECKIN_PHOTO_CAPTIONS,
     LOCAL_TZ, VOICE_DIR_MORNING, VOICE_DIR_EVENING,
+    LISA_MOODS, LISA_MOOD_TIME_WEIGHTS,
     client, logger,
 )
 from db import (
     get_last_contacts, get_user_settings,
     set_last_checkin_date, update_last_interaction,
-    get_user_memory,
+    get_user_memory, set_lisa_mood,
 )
 from utils import (
     local_now, local_date_str, start_of_local_day,
@@ -148,3 +149,25 @@ async def check_lonely_users(context: CallbackContext) -> None:
             logger.warning(f"Telegram error for user {user_id}: {e}")
         except Exception as e:
             logger.error(f"Check-in error for user {user_id}: {e}", exc_info=True)
+
+
+async def update_lisa_mood(context: CallbackContext) -> None:
+    now = local_now()
+    hour = now.hour
+
+    if 6 <= hour < 12:
+        period = "morning"
+    elif 12 <= hour < 18:
+        period = "afternoon"
+    elif 18 <= hour < 24:
+        period = "evening"
+    else:
+        period = "night"
+
+    if random.random() < 0.7:
+        new_mood = random.choice(LISA_MOOD_TIME_WEIGHTS[period])
+    else:
+        new_mood = random.choice(list(LISA_MOODS.keys()))
+
+    set_lisa_mood(new_mood)
+    logger.info(f"Lisa mood updated: {new_mood} (period={period})")
