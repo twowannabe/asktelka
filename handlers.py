@@ -335,7 +335,7 @@ async def nudes_gen_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     hint = " ".join(context.args).strip() if context.args else ""
 
-    await update.message.reply_text("подожди, фоткаюсь для тебя... 📸")
+    await update.message.reply_text("подожди, фоткаюсь для тебя...")
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_PHOTO)
     photo_bytes = await generate_selfie(prompt_hint=hint, base_prompt=NUDES_GEN_BASE_PROMPT)
     if not photo_bytes:
@@ -799,7 +799,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if is_circle_request and (chat.type == "private" or (update.message.reply_to_message and update.message.reply_to_message.from_user and update.message.reply_to_message.from_user.id == context.bot.id)):
         if user_level >= LEVEL_VIDEO_NOTE_UNLOCK:
             try:
-                await context.bot.send_message(chat_id=chat_id, text="подожди, записываю кружочек... 📹")
+                await context.bot.send_message(chat_id=chat_id, text="подожди, записываю кружочек...")
                 await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_VIDEO_NOTE)
                 video_bytes = await generate_video_note()
                 if video_bytes:
