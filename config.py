@@ -441,6 +441,7 @@ SELFIE_LORA_MODEL = "twowannabe/sweeny:da0b32fc460b94bcf684e2445e21ba82132700b2d
 # SDXL LoRA for NSFW — set after training with train_sdxl_lora.py
 NUDES_LORA_MODEL = config("NUDES_LORA_MODEL", default="")
 WAN_I2V_MODEL = "wavespeedai/wan-2.1-i2v-480p"
+WAV2LIP_VERSION = "35318395aa75b2521dd8805973e755a01e8017467ef45fdf76b886ced9a09f52"
 VIDEO_NOTE_KEYWORDS = [
     "кружочек", "кружочк", "кружок", "круж",
     "запиши видео", "запиши кружок", "запиши кружочек",

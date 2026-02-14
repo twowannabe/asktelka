@@ -10,7 +10,7 @@ from config import (
     REPLICATE_API_TOKEN,
     MAX_VOICE_WORDS,
     LEVEL_PERSONALITIES, SELFIE_BASE_PROMPT, SELFIE_LORA_MODEL, NUDES_LORA_MODEL,
-    WAN_I2V_MODEL,
+    WAN_I2V_MODEL, WAV2LIP_VERSION,
     client, groq_client, default_personality, logger,
 )
 from base64 import b64encode, b64decode
@@ -345,9 +345,10 @@ async def generate_selfie(prompt_hint: str = "", base_prompt: str = "", aspect_r
 
 
 async def generate_video_note(prompt_hint: str = "") -> bytes | None:
-    """Generate an animated video note: selfie → Wan 2.1 I2V → square MP4."""
+    """Generate an animated video note: selfie → Wan 2.1 I2V → Wav2Lip lip-sync → square MP4."""
     import subprocess
     import tempfile
+    import os
 
     # Step 1: generate a selfie image
     image_bytes = await generate_selfie(prompt_hint)
@@ -356,22 +357,24 @@ async def generate_video_note(prompt_hint: str = "") -> bytes | None:
         return None
 
     try:
-        # Step 2: upload image to Replicate as data URI
+        # Step 2: image as data URI
         image_b64 = b64encode(image_bytes).decode()
         image_uri = f"data:image/jpeg;base64,{image_b64}"
 
+        replicate_headers = {
+            "Authorization": f"Bearer {REPLICATE_API_TOKEN}",
+            "Content-Type": "application/json",
+        }
+
+        # Step 3: Wan 2.1 I2V prediction
         async with httpx.AsyncClient(timeout=30) as http:
-            # Step 3: create Wan 2.1 I2V prediction
             resp = await http.post(
                 f"https://api.replicate.com/v1/models/{WAN_I2V_MODEL}/predictions",
-                headers={
-                    "Authorization": f"Bearer {REPLICATE_API_TOKEN}",
-                    "Content-Type": "application/json",
-                },
+                headers=replicate_headers,
                 json={
                     "input": {
                         "image": image_uri,
-                        "prompt": prompt_hint or "a woman looking at camera, subtle natural movement, breathing",
+                        "prompt": "a young woman looking at camera, subtle natural movement, breathing, slight smile",
                         "num_inference_steps": 30,
                         "duration": 5,
                         "size": "480*832",
@@ -388,7 +391,8 @@ async def generate_video_note(prompt_hint: str = "") -> bytes | None:
                 or f"https://api.replicate.com/v1/predictions/{prediction['id']}"
             )
 
-        # Step 4: poll for completion (up to 300 sec)
+        # Poll Wan I2V (up to 300 sec)
+        video_url = None
         async with httpx.AsyncClient(timeout=30) as http:
             for _ in range(150):
                 await asyncio.sleep(2)
@@ -403,11 +407,6 @@ async def generate_video_note(prompt_hint: str = "") -> bytes | None:
                     if not output:
                         return None
                     video_url = output if isinstance(output, str) else output[0]
-                    vid_resp = await http.get(video_url)
-                    if vid_resp.status_code != 200:
-                        logger.error(f"Wan I2V video download failed: {vid_resp.status_code}")
-                        return None
-                    mp4_input = vid_resp.content
                     break
                 elif status in ("failed", "canceled"):
                     logger.error(f"Wan I2V prediction failed: {data.get('error')}")
@@ -416,7 +415,7 @@ async def generate_video_note(prompt_hint: str = "") -> bytes | None:
                 logger.error("Wan I2V prediction timed out")
                 return None
 
-        # Step 5a: generate whisper audio for the video note
+        # Step 4: ElevenLabs TTS
         VIDEO_NOTE_WHISPERS = [
             "мм, смотри...", "это для тебя...", "нравится?", "скучала...",
             "иди сюда...", "только для тебя...", "ммм...", "хочешь ещё?",
@@ -430,8 +429,67 @@ async def generate_video_note(prompt_hint: str = "") -> bytes | None:
         except Exception as e:
             logger.warning(f"Video note audio generation failed: {e}")
 
-        # Step 5b: ffmpeg — crop to square, re-encode, merge audio
-        import os
+        # Step 5: Wav2Lip lip-sync (only if we have audio)
+        lipsync_url = None
+        if audio_bytes:
+            try:
+                audio_b64 = b64encode(audio_bytes).decode()
+                audio_uri = f"data:audio/ogg;base64,{audio_b64}"
+
+                async with httpx.AsyncClient(timeout=30) as http:
+                    resp = await http.post(
+                        "https://api.replicate.com/v1/predictions",
+                        headers=replicate_headers,
+                        json={
+                            "version": WAV2LIP_VERSION,
+                            "input": {
+                                "face": video_url,
+                                "audio": audio_uri,
+                            },
+                        },
+                    )
+                    if resp.status_code not in (200, 201, 202):
+                        logger.warning(f"Wav2Lip create error: {resp.status_code} {resp.text[:200]}")
+                    else:
+                        lip_prediction = resp.json()
+                        lip_poll_url = (
+                            lip_prediction.get("urls", {}).get("get")
+                            or f"https://api.replicate.com/v1/predictions/{lip_prediction['id']}"
+                        )
+
+                        # Poll Wav2Lip (up to 120 sec)
+                        for _ in range(60):
+                            await asyncio.sleep(2)
+                            poll = await http.get(
+                                lip_poll_url,
+                                headers={"Authorization": f"Bearer {REPLICATE_API_TOKEN}"},
+                            )
+                            data = poll.json()
+                            lip_status = data.get("status")
+                            if lip_status == "succeeded":
+                                lip_output = data.get("output")
+                                if lip_output:
+                                    lipsync_url = lip_output if isinstance(lip_output, str) else lip_output[0]
+                                break
+                            elif lip_status in ("failed", "canceled"):
+                                logger.warning(f"Wav2Lip prediction failed: {data.get('error')}")
+                                break
+                        else:
+                            logger.warning("Wav2Lip prediction timed out")
+            except Exception as e:
+                logger.warning(f"Wav2Lip error: {e}", exc_info=True)
+
+        # Step 6: download video and ffmpeg finalize
+        has_lipsync = lipsync_url is not None
+        download_url = lipsync_url if has_lipsync else video_url
+
+        async with httpx.AsyncClient(timeout=30) as http:
+            vid_resp = await http.get(download_url)
+            if vid_resp.status_code != 200:
+                logger.error(f"Video download failed: {vid_resp.status_code}")
+                return None
+            mp4_input = vid_resp.content
+
         in_tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
         out_tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
         in_path, out_path = in_tmp.name, out_tmp.name
@@ -443,7 +501,18 @@ async def generate_video_note(prompt_hint: str = "") -> bytes | None:
             with open(in_path, "wb") as f:
                 f.write(mp4_input)
 
-            if audio_bytes:
+            if has_lipsync:
+                # Wav2Lip output already contains synced audio
+                cmd = [
+                    "ffmpeg", "-y", "-i", in_path,
+                    "-vf", "crop='min(iw,ih)':'min(iw,ih)',scale=512:512",
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                    "-c:a", "aac", "-b:a", "64k",
+                    "-movflags", "+faststart",
+                    "-f", "mp4", out_path,
+                ]
+            elif audio_bytes:
+                # Fallback: no lip-sync but merge audio separately
                 audio_tmp = tempfile.NamedTemporaryFile(suffix=".ogg", delete=False)
                 audio_path = audio_tmp.name
                 audio_tmp.close()
@@ -460,6 +529,7 @@ async def generate_video_note(prompt_hint: str = "") -> bytes | None:
                     "-f", "mp4", out_path,
                 ]
             else:
+                # No audio at all
                 cmd = [
                     "ffmpeg", "-y", "-i", in_path,
                     "-vf", "crop='min(iw,ih)':'min(iw,ih)',scale=512:512",
