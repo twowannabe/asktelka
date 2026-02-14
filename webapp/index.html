@@ -264,35 +264,6 @@
     display: block;
   }
 
-  .btn-row {
-    display: flex;
-    gap: 10px;
-    margin-top: 8px;
-  }
-
-  .save-btn {
-    flex: 1;
-    padding: 14px;
-    border: none;
-    border-radius: 12px;
-    background: var(--btn);
-    color: var(--btn-text);
-    font-size: 16px;
-    font-weight: 600;
-    cursor: pointer;
-  }
-
-  .close-btn {
-    flex: 1;
-    padding: 14px;
-    border: 1px solid var(--hint);
-    border-radius: 12px;
-    background: transparent;
-    color: var(--hint);
-    font-size: 16px;
-    font-weight: 600;
-    cursor: pointer;
-  }
 </style>
 </head>
 <body>
@@ -372,10 +343,8 @@
   </div>
 </div>
 
-<div class="btn-row">
-  <button class="save-btn" id="save-btn">Сохранить</button>
-  <button class="close-btn" id="close-btn">Закрыть</button>
-</div>
+<button class="close-btn" id="close-btn" style="display:block;width:100%;margin-top:8px;padding:14px;border:1px solid var(--hint);border-radius:12px;background:transparent;color:var(--hint);font-size:16px;font-weight:600;cursor:pointer;">Закрыть без сохранения</button>
+<div id="debug-info" style="margin-top:12px;font-size:11px;color:var(--hint);text-align:center;"></div>
 
 <script>
 const ACHIEVEMENTS = {
@@ -494,38 +463,57 @@ styleOptions.forEach(opt => {
   });
 });
 
-// Save
-document.getElementById("save-btn").addEventListener("click", () => {
+// Debug info
+const dbg = document.getElementById("debug-info");
+const tgApp = window.Telegram && Telegram.WebApp;
+if (tgApp) {
+  dbg.textContent = "initData: " + (tgApp.initData ? "yes" : "no") +
+    " | sendData: " + (typeof tgApp.sendData) +
+    " | platform: " + (tgApp.platform || "?");
+} else {
+  dbg.textContent = "Telegram.WebApp not available";
+}
+
+function collectData() {
   const activeStyle = document.querySelector(".style-option.active");
   let personalityValue = activeStyle ? activeStyle.dataset.value : "preset:flirty";
   if (personalityValue === "custom") {
     personalityValue = "custom:" + (customText.value || "").trim();
   }
-
-  const data = {
+  return {
     custom_name: document.getElementById("custom-name").value.trim(),
     do_not_write_first: document.getElementById("toggle-dnwf").checked,
     voice_enabled: document.getElementById("toggle-voice").checked,
     personality: personalityValue,
   };
-
-  try {
-    Telegram.WebApp.sendData(JSON.stringify(data));
-  } catch(e) {
-    alert("Ошибка сохранения");
-  }
-});
+}
 
 // Close without saving
 document.getElementById("close-btn").addEventListener("click", () => {
   try { Telegram.WebApp.close(); } catch(e) {}
 });
 
-// Telegram WebApp
+// Telegram WebApp init + MainButton
 try {
   Telegram.WebApp.ready();
   Telegram.WebApp.expand();
-} catch(e) {}
+
+  // Use native MainButton for save
+  Telegram.WebApp.MainButton.setText("Сохранить");
+  Telegram.WebApp.MainButton.show();
+  Telegram.WebApp.MainButton.onClick(() => {
+    const data = collectData();
+    const json = JSON.stringify(data);
+    dbg.textContent = "sending: " + json.substring(0, 80) + "...";
+    try {
+      Telegram.WebApp.sendData(json);
+    } catch(e) {
+      dbg.textContent = "sendData error: " + e.message;
+    }
+  });
+} catch(e) {
+  dbg.textContent = "init error: " + e.message;
+}
 </script>
 </body>
 </html>
