@@ -64,11 +64,12 @@ def main():
 
     print(f"Uploading {ARCHIVE_PATH} to Replicate...")
     with open(ARCHIVE_PATH, "rb") as f:
-        file_output = replicate.files.create(f)
+        file_output = replicate.files.create(f, filename="Archive.zip", content_type="application/zip")
     file_url = file_output.urls["get"]
     print(f"Uploaded: {file_url}")
 
     TRAINING_PARAMS["input_images"] = file_url
+    TRAINING_PARAMS["input_images_filetype"] = "zip"
 
     # Create destination model if it doesn't exist
     owner, model_name = DESTINATION.split("/")
@@ -77,13 +78,23 @@ def main():
         print(f"Model {DESTINATION} already exists")
     except Exception:
         print(f"Creating model {DESTINATION}...")
-        replicate.models.create(
-            owner=owner,
-            name=model_name,
-            visibility="private",
-            hardware="gpu-t4",
+        # Use raw HTTP to avoid replicate library SKU mapping bugs
+        import httpx
+        resp = httpx.post(
+            "https://api.replicate.com/v1/models",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "owner": owner,
+                "name": model_name,
+                "visibility": "private",
+                "hardware": "gpu-t4",
+            },
         )
-        print(f"Model created: {DESTINATION}")
+        if resp.status_code not in (200, 201):
+            print(f"Warning: model creation returned {resp.status_code}: {resp.text}")
+            print("Continuing anyway — training may auto-create it...")
+        else:
+            print(f"Model created: {DESTINATION}")
 
     print(f"\nStarting SDXL LoRA training → {DESTINATION}")
     print(f"Token: {TRAINING_PARAMS['token_string']}")
@@ -105,8 +116,9 @@ def main():
         time.sleep(15)
         training.reload()
         elapsed = ""
-        if training.metrics and "predict_time" in training.metrics:
-            elapsed = f" ({training.metrics['predict_time']:.0f}s)"
+        metrics = getattr(training, "metrics", None)
+        if metrics and "predict_time" in metrics:
+            elapsed = f" ({metrics['predict_time']:.0f}s)"
         print(f"  Status: {training.status}{elapsed}")
 
     if training.status == "succeeded":
