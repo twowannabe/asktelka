@@ -3,7 +3,7 @@ name: Deploy to server
 on:
   push:
     branches:
-      - dev
+      - main
 
 jobs:
   deploy:
@@ -17,6 +17,6 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd /root/repos/asktelka
-            git pull origin dev
+            git pull origin main
             /root/bots/bin/pip install -r requirements.txt
             systemctl restart asktelka
