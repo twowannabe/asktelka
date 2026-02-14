@@ -176,10 +176,8 @@ async def check_lonely_users(context: CallbackContext) -> None:
                     user_id=int(user_id), silence_hours=silence_hours,
                 )
 
-                if chat_type != "private" and username:
+                if username:
                     text = f"@{username}, {text[0].lower()}{text[1:]}"
-                elif chat_type != "private" and first_name:
-                    text = f"{first_name}, {text[0].lower()}{text[1:]}"
 
                 await send_checkin_voice_or_text(context.bot, int(chat_id), text)
 
