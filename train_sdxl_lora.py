@@ -105,8 +105,9 @@ def main():
         time.sleep(15)
         training.reload()
         elapsed = ""
-        if training.metrics and "predict_time" in training.metrics:
-            elapsed = f" ({training.metrics['predict_time']:.0f}s)"
+        metrics = getattr(training, "metrics", None)
+        if metrics and "predict_time" in metrics:
+            elapsed = f" ({metrics['predict_time']:.0f}s)"
         print(f"  Status: {training.status}{elapsed}")
 
     if training.status == "succeeded":
