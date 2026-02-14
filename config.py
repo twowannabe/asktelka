@@ -320,6 +320,9 @@ SELFIE_BASE_PROMPT = (
     "natural lighting, casual style, cute face with a slight smirk."
 )
 SELFIE_LORA_MODEL = "twowannabe/sweeny:da0b32fc460b94bcf684e2445e21ba82132700b2db5a9541d27da690bfc3eb7a"
+SVD_MODEL_VERSION = "3f0457e4619daac51203dedb472816fd4af51f3149fa7a9e0b5ffcf1b8172438"
+SVD_MOTION_BUCKET_ID = 127
+SVD_FRAMES_PER_SECOND = 6
 SELFIE_CHANCE = 0.03
 VIDEO_NOTE_CHANCE = 1 / 30
 SELFIE_CAPTIONS = [

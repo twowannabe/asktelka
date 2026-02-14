@@ -48,7 +48,7 @@ from db import (
     get_user_zodiac, set_user_zodiac, get_last_horoscope_date, set_last_horoscope_date,
     run_sync,
 )
-from gpt import ask_chatgpt, text_to_voice, get_ogg_duration, transcribe_voice, summarize_memory, generate_chat_comment, generate_jealous_comment, react_to_photo, generate_selfie, generate_horoscope, generate_diary
+from gpt import ask_chatgpt, text_to_voice, get_ogg_duration, transcribe_voice, summarize_memory, generate_chat_comment, generate_jealous_comment, react_to_photo, generate_selfie, generate_video_note, generate_horoscope, generate_diary
 from games import handle_game_response
 from utils import (
     escape_markdown_v2, lowercase_first, is_bot_enabled,
@@ -365,13 +365,31 @@ async def circle_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         )
         return
 
+    hint = " ".join(context.args).strip() if context.args else ""
+
+    # Try generating a video note on the fly
+    await update.message.reply_text("подожди, записываю кружочек... 📹")
+    await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_VIDEO_NOTE)
+    video_bytes = await generate_video_note(hint)
+
+    if video_bytes:
+        caption = random.choice(VIDEO_NOTE_CAPTIONS)
+        await context.bot.send_video_note(chat_id=chat_id, video_note=io.BytesIO(video_bytes))
+        await context.bot.send_message(chat_id=chat_id, text=caption)
+        log_interaction(user_id, update.effective_user.username or "", f"/circle {hint}".strip(), f"[video_note_gen] {caption}")
+        _, new_level, leveled_up = add_xp(user_id, XP_PER_VIDEO_NOTE)
+        if leveled_up:
+            await send_level_up(context.bot, chat_id, new_level, update.effective_chat.type)
+        return
+
+    # Fallback: pre-recorded video notes from directory
     if not os.path.isdir(VIDEO_NOTES_DIR):
-        await update.message.reply_text("у меня пока нет кружочков 😔")
+        await update.message.reply_text("не получилось записать кружочек 😔 попробуй позже")
         return
 
     videos = [f for f in os.listdir(VIDEO_NOTES_DIR) if f.lower().endswith(".mp4")]
     if not videos:
-        await update.message.reply_text("у меня пока нет кружочков 😔")
+        await update.message.reply_text("не получилось записать кружочек 😔 попробуй позже")
         return
 
     video_path = os.path.join(VIDEO_NOTES_DIR, random.choice(videos))
@@ -1014,11 +1032,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Spontaneous video note (private chat only, level gated)
     if chat.type == "private" and user_level >= LEVEL_VIDEO_NOTE_UNLOCK and random.random() < VIDEO_NOTE_CHANCE * lisa_mood_data["circle_mult"]:
         try:
-            if os.path.isdir(VIDEO_NOTES_DIR):
+            await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_VIDEO_NOTE)
+            video_bytes = await generate_video_note()
+            if video_bytes:
+                caption = random.choice(VIDEO_NOTE_CAPTIONS)
+                await context.bot.send_video_note(chat_id=chat_id, video_note=io.BytesIO(video_bytes))
+                await context.bot.send_message(chat_id=chat_id, text=caption)
+            elif os.path.isdir(VIDEO_NOTES_DIR):
                 videos = [f for f in os.listdir(VIDEO_NOTES_DIR) if f.lower().endswith(".mp4")]
                 if videos:
                     video_path = os.path.join(VIDEO_NOTES_DIR, random.choice(videos))
-                    await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_VIDEO_NOTE)
                     with open(video_path, "rb") as vf:
                         await context.bot.send_video_note(chat_id=chat_id, video_note=vf)
                     caption = random.choice(VIDEO_NOTE_CAPTIONS)

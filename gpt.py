@@ -10,6 +10,7 @@ from config import (
     REPLICATE_API_TOKEN,
     MAX_VOICE_WORDS,
     LEVEL_PERSONALITIES, SELFIE_BASE_PROMPT, SELFIE_LORA_MODEL,
+    SVD_MODEL_VERSION, SVD_MOTION_BUCKET_ID, SVD_FRAMES_PER_SECOND,
     client, groq_client, default_personality, logger,
 )
 from base64 import b64encode, b64decode
@@ -284,6 +285,122 @@ async def generate_selfie(prompt_hint: str = "", base_prompt: str = "") -> bytes
     except Exception as e:
         logger.error(f"Selfie generation error: {e}", exc_info=True)
     return None
+
+
+async def generate_video_note(prompt_hint: str = "") -> bytes | None:
+    """Generate an animated video note: selfie → SVD animation → square MP4."""
+    import subprocess
+    import tempfile
+
+    # Step 1: generate a selfie image
+    image_bytes = await generate_selfie(prompt_hint)
+    if not image_bytes:
+        logger.error("Video note: selfie generation failed")
+        return None
+
+    try:
+        # Step 2: upload image to Replicate as data URI
+        image_b64 = b64encode(image_bytes).decode()
+        image_uri = f"data:image/jpeg;base64,{image_b64}"
+
+        async with httpx.AsyncClient(timeout=30) as http:
+            # Step 3: create SVD prediction
+            resp = await http.post(
+                "https://api.replicate.com/v1/predictions",
+                headers={
+                    "Authorization": f"Bearer {REPLICATE_API_TOKEN}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "version": SVD_MODEL_VERSION,
+                    "input": {
+                        "input_image": image_uri,
+                        "video_length": "14_frames_with_svd",
+                        "frames_per_second": SVD_FRAMES_PER_SECOND,
+                        "motion_bucket_id": SVD_MOTION_BUCKET_ID,
+                        "sizing_strategy": "maintain_aspect_ratio",
+                    },
+                },
+            )
+            if resp.status_code not in (200, 201, 202):
+                logger.error(f"SVD create error: {resp.status_code} {resp.text[:200]}")
+                return None
+
+            prediction = resp.json()
+            poll_url = (
+                prediction.get("urls", {}).get("get")
+                or f"https://api.replicate.com/v1/predictions/{prediction['id']}"
+            )
+
+        # Step 4: poll for completion (up to 180 sec)
+        async with httpx.AsyncClient(timeout=30) as http:
+            for _ in range(90):
+                await asyncio.sleep(2)
+                poll = await http.get(
+                    poll_url,
+                    headers={"Authorization": f"Bearer {REPLICATE_API_TOKEN}"},
+                )
+                data = poll.json()
+                status = data.get("status")
+                if status == "succeeded":
+                    output = data.get("output")
+                    if not output:
+                        return None
+                    video_url = output if isinstance(output, str) else output[0]
+                    # Download the MP4
+                    vid_resp = await http.get(video_url)
+                    if vid_resp.status_code != 200:
+                        logger.error(f"SVD video download failed: {vid_resp.status_code}")
+                        return None
+                    mp4_input = vid_resp.content
+                    break
+                elif status in ("failed", "canceled"):
+                    logger.error(f"SVD prediction failed: {data.get('error')}")
+                    return None
+            else:
+                logger.error("SVD prediction timed out")
+                return None
+
+        # Step 5: ffmpeg — crop to square and re-encode
+        # SVD outputs 1024x576; crop center 576x576 then scale to 512x512
+        # Use tempfile for output since -movflags +faststart needs seekable output
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+            tmp_path = tmp.name
+
+        try:
+            proc = subprocess.run(
+                [
+                    "ffmpeg", "-y", "-i", "pipe:0",
+                    "-vf", "crop=min(iw\\,ih):min(iw\\,ih),scale=512:512",
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                    "-movflags", "+faststart",
+                    "-an", "-f", "mp4", tmp_path,
+                ],
+                input=mp4_input,
+                capture_output=True,
+                timeout=30,
+            )
+            if proc.returncode != 0:
+                logger.error(f"ffmpeg crop error: {proc.stderr[:300]}")
+                return None
+
+            import os
+            with open(tmp_path, "rb") as f:
+                result = f.read()
+            os.unlink(tmp_path)
+            return result if result else None
+        except Exception as e:
+            logger.error(f"ffmpeg video note error: {e}", exc_info=True)
+            try:
+                import os
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            return None
+
+    except Exception as e:
+        logger.error(f"Video note generation error: {e}", exc_info=True)
+        return None
 
 
 async def generate_horoscope(sign: str, user_level: int) -> str:
