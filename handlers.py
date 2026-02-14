@@ -28,7 +28,7 @@ from config import (
     XP_PER_TEXT, XP_PER_VOICE, XP_PER_NUDES, XP_PER_SELFIE, XP_PER_VIDEO_NOTE,
     XP_PER_HOROSCOPE, XP_PER_DIARY, ZODIAC_SIGNS,
     SELFIE_CHANCE, SELFIE_CAPTIONS, NUDES_GEN_CAPTIONS, NUDES_GEN_BASE_PROMPT,
-    VIDEO_NOTE_CHANCE, VIDEO_NOTE_CAPTIONS, VIDEO_NOTES_DIR,
+    VIDEO_NOTE_CHANCE, VIDEO_NOTE_CAPTIONS, VIDEO_NOTES_DIR, VIDEO_NOTE_KEYWORDS,
     MEMORY_SUMMARIZE_EVERY,
     ACHIEVEMENTS, ACHIEVEMENT_MESSAGES,
     LISA_MOODS,
@@ -793,6 +793,37 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 await update.message.reply_text(tease, reply_to_message_id=update.message.message_id)
             await run_sync(log_interaction, user_id, user_username, text, f"[tease] {tease}")
             return
+
+    # Video note (circle) request detection
+    is_circle_request = any(kw in text_lower for kw in VIDEO_NOTE_KEYWORDS)
+    if is_circle_request and (chat.type == "private" or (update.message.reply_to_message and update.message.reply_to_message.from_user and update.message.reply_to_message.from_user.id == context.bot.id)):
+        if user_level >= LEVEL_VIDEO_NOTE_UNLOCK:
+            try:
+                await context.bot.send_message(chat_id=chat_id, text="подожди, записываю кружочек... 📹")
+                await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_VIDEO_NOTE)
+                video_bytes = await generate_video_note()
+                if video_bytes:
+                    caption = random.choice(VIDEO_NOTE_CAPTIONS)
+                    await context.bot.send_video_note(chat_id=chat_id, video_note=io.BytesIO(video_bytes))
+                    await context.bot.send_message(chat_id=chat_id, text=caption)
+                    await run_sync(log_interaction, user_id, user_username, text, f"[video_note_gen] {caption}")
+                    _, new_level, leveled_up = await run_sync(add_xp, user_id, XP_PER_VIDEO_NOTE)
+                    if leveled_up:
+                        await send_level_up(context.bot, chat_id, new_level, chat.type)
+                    return
+            except Exception as e:
+                logger.error(f"Video note request error: {e}", exc_info=True)
+            # fallback: send from directory
+            if os.path.isdir(VIDEO_NOTES_DIR):
+                videos = [f for f in os.listdir(VIDEO_NOTES_DIR) if f.lower().endswith(".mp4")]
+                if videos:
+                    video_path = os.path.join(VIDEO_NOTES_DIR, random.choice(videos))
+                    caption = random.choice(VIDEO_NOTE_CAPTIONS)
+                    with open(video_path, "rb") as vf:
+                        await context.bot.send_video_note(chat_id=chat_id, video_note=vf)
+                    await context.bot.send_message(chat_id=chat_id, text=caption)
+                    await run_sync(log_interaction, user_id, user_username, text, f"[video_note] {caption}")
+                    return
 
     bot_username = context.bot.username
     is_bot_mentioned = f"@{bot_username}".lower() in text.lower()
