@@ -14,17 +14,20 @@ from telegram.ext import (
     filters,
 )
 
-from config import TELEGRAM_TOKEN, CHECK_LONELY_INTERVAL_SEC, LISA_MOOD_UPDATE_INTERVAL_SEC, logger
+from config import (
+    TELEGRAM_TOKEN, CHECK_LONELY_INTERVAL_SEC, LISA_MOOD_UPDATE_INTERVAL_SEC,
+    RITUAL_CHECK_INTERVAL_SEC, THOUGHT_CHECK_INTERVAL_SEC, logger,
+)
 from db import init_db
 from handlers import (
     start_cmd, help_cmd, stats_cmd, level_cmd, achievements_cmd,
     set_personality_cmd, dontwritefirst_cmd, writefirst_cmd,
     mood_cmd, clear_mood_cmd, mood_lisa_cmd, disable_cmd, reset_cmd,
-    selfie_cmd, nudes_gen_cmd, circle_cmd, horoscope_cmd,
+    selfie_cmd, nudes_gen_cmd, circle_cmd, horoscope_cmd, diary_cmd,
     handle_message, handle_voice, handle_media, error_handler,
 )
 from games import truth_cmd, guess_cmd, riddle_cmd, quiz_cmd, quiz_callback
-from checkin import check_lonely_users, update_lisa_mood
+from checkin import check_lonely_users, update_lisa_mood, send_ritual, send_lisa_thoughts
 
 
 def main():
@@ -50,6 +53,7 @@ def main():
     application.add_handler(CommandHandler("nudes", nudes_gen_cmd))
     application.add_handler(CommandHandler("horoscope", horoscope_cmd))
     application.add_handler(CommandHandler("mood_lisa", mood_lisa_cmd))
+    application.add_handler(CommandHandler("diary", diary_cmd))
 
     # Mini-games
     application.add_handler(CommandHandler("truth", truth_cmd))
@@ -74,6 +78,16 @@ def main():
         update_lisa_mood,
         interval=LISA_MOOD_UPDATE_INTERVAL_SEC,
         first=10,
+    )
+    job_queue.run_repeating(
+        send_ritual,
+        interval=RITUAL_CHECK_INTERVAL_SEC,
+        first=30,
+    )
+    job_queue.run_repeating(
+        send_lisa_thoughts,
+        interval=THOUGHT_CHECK_INTERVAL_SEC,
+        first=120,
     )
 
     logger.info("Bot started")

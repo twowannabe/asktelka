@@ -26,7 +26,7 @@ from config import (
     JEALOUSY_REACTIONS, jealousy_counters, jealousy_cooldowns,
     LEVEL_VOICE_UNLOCK, LEVEL_SELFIE_UNLOCK, LEVEL_VIDEO_NOTE_UNLOCK, LEVEL_NUDES_UNLOCK,
     XP_PER_TEXT, XP_PER_VOICE, XP_PER_NUDES, XP_PER_SELFIE, XP_PER_VIDEO_NOTE,
-    XP_PER_HOROSCOPE, ZODIAC_SIGNS,
+    XP_PER_HOROSCOPE, XP_PER_DIARY, ZODIAC_SIGNS,
     SELFIE_CHANCE, SELFIE_CAPTIONS, NUDES_GEN_CAPTIONS, NUDES_GEN_BASE_PROMPT,
     VIDEO_NOTE_CHANCE, VIDEO_NOTE_CAPTIONS, VIDEO_NOTES_DIR,
     MEMORY_SUMMARIZE_EVERY,
@@ -48,7 +48,7 @@ from db import (
     get_user_zodiac, set_user_zodiac, get_last_horoscope_date, set_last_horoscope_date,
     run_sync,
 )
-from gpt import ask_chatgpt, text_to_voice, get_ogg_duration, transcribe_voice, summarize_memory, generate_chat_comment, generate_jealous_comment, react_to_photo, generate_selfie, generate_horoscope
+from gpt import ask_chatgpt, text_to_voice, get_ogg_duration, transcribe_voice, summarize_memory, generate_chat_comment, generate_jealous_comment, react_to_photo, generate_selfie, generate_horoscope, generate_diary
 from games import handle_game_response
 from utils import (
     escape_markdown_v2, lowercase_first, is_bot_enabled,
@@ -95,6 +95,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/nudes [описание] — фото от Лизы 🔞\n"
         "/circle — кружочек от Лизы 🎥\n"
         "/horoscope [знак] — гороскоп от Лизы 🔮\n"
+        "/diary — дневник отношений с Лизой 📖\n"
         "/mood_lisa — узнать настроение Лизы\n\n"
         "🎮 мини-игры:\n"
         "/truth — правда или действие (+2 XP)\n"
@@ -383,6 +384,73 @@ async def circle_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     log_interaction(user_id, update.effective_user.username or "", "/circle", f"[video_note] {caption}")
 
     _, new_level, leveled_up = add_xp(user_id, XP_PER_VIDEO_NOTE)
+    if leveled_up:
+        await send_level_up(context.bot, chat_id, new_level, update.effective_chat.type)
+
+
+# ---------------------- DIARY ----------------------
+
+async def diary_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+    user_first_name = update.effective_user.first_name or update.effective_user.username or ""
+
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute("SELECT COUNT(*) FROM askgbt_logs WHERE user_id = %s", (user_id,))
+        total = cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM askgbt_logs WHERE user_id = %s AND gpt_reply LIKE '[voice]%%'", (user_id,))
+        voice_replies = cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM askgbt_logs WHERE user_id = %s AND user_message LIKE '[voice]%%'", (user_id,))
+        voice_sent = cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM askgbt_logs WHERE user_id = %s AND gpt_reply LIKE '[nudes]%%'", (user_id,))
+        nudes = cur.fetchone()[0]
+
+        cur.execute("SELECT MIN(timestamp), MAX(timestamp) FROM askgbt_logs WHERE user_id = %s", (user_id,))
+        first_msg, last_msg = cur.fetchone()
+
+        cur.close()
+        release_db_connection(conn)
+
+        days = (last_msg - first_msg).days + 1 if first_msg and last_msg else 1
+    except Exception as e:
+        logger.error(f"Diary stats error: {e}", exc_info=True)
+        total = voice_sent = voice_replies = nudes = days = 0
+
+    level_info = await run_sync(get_user_level_info, user_id)
+    user_level = level_info["level"]
+    streak = level_info["streak_days"]
+    memory = await run_sync(get_user_memory, user_id)
+
+    lisa_mood_key = await run_sync(get_lisa_mood)
+    lisa_mood_data = LISA_MOODS.get(lisa_mood_key, LISA_MOODS["playful"])
+
+    stats = {
+        "total": total,
+        "voice_sent": voice_sent,
+        "voice_replies": voice_replies,
+        "nudes": nudes,
+        "days": days,
+        "streak": streak,
+    }
+
+    await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+    diary_text = await generate_diary(
+        user_name=user_first_name,
+        memory=memory,
+        user_level=user_level,
+        stats=stats,
+        lisa_mood_prompt=lisa_mood_data["prompt_mod"],
+    )
+
+    await update.message.reply_text(f"📖 {diary_text}")
+
+    _, new_level, leveled_up = await run_sync(add_xp, user_id, XP_PER_DIARY)
     if leveled_up:
         await send_level_up(context.bot, chat_id, new_level, update.effective_chat.type)
 

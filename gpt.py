@@ -316,6 +316,79 @@ async def generate_horoscope(sign: str, user_level: int) -> str:
         return "звёзды молчат... попробуй позже 🌙"
 
 
+async def generate_diary(user_name: str, memory: str, user_level: int, stats: dict, lisa_mood_prompt: str) -> str:
+    personality = LEVEL_PERSONALITIES.get(user_level, LEVEL_PERSONALITIES[7])
+    system_prompt = (
+        f"{personality} "
+        f"Ты Лиза. Напиши запись в свой личный дневник о {user_name}. "
+        "Пиши от первого лица, как будто это твой секретный дневник. "
+        "3-5 предложений. Упомяни детали из памяти и статистики. "
+        "ВАЖНО: всегда начинай с маленькой буквы, кроме имён собственных. "
+        "ОБЯЗАТЕЛЬНО используй букву «ё» везде, где она нужна."
+    )
+    user_prompt = (
+        f"Напиши запись в дневник о {user_name}.\n"
+        f"Память о нём: {memory or 'пока мало знаю'}\n"
+        f"Статистика: сообщений — {stats.get('total', 0)}, голосовых от него — {stats.get('voice_sent', 0)}, "
+        f"голосовых от меня — {stats.get('voice_replies', 0)}, нюдсов — {stats.get('nudes', 0)}, "
+        f"дней общения — {stats.get('days', 1)}, стрик — {stats.get('streak', 0)} дн.\n"
+        f"Моё настроение сейчас: {lisa_mood_prompt}"
+    )
+    try:
+        response = await asyncio.wait_for(
+            client.chat.completions.create(
+                model="grok-3-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+            ),
+            timeout=30,
+        )
+        reply = (response.choices[0].message.content or "").strip()
+        if not reply:
+            return "не могу писать сегодня... 😔"
+        return lowercase_first(reply)
+    except Exception as e:
+        logger.error(f"Diary generation error: {e}", exc_info=True)
+        return "не могу писать сегодня... 😔"
+
+
+async def generate_lisa_thought(user_name: str, memory: str, user_level: int, lisa_mood_prompt: str) -> str:
+    personality = LEVEL_PERSONALITIES.get(user_level, LEVEL_PERSONALITIES[7])
+    system_prompt = (
+        f"{personality} "
+        "Напиши короткую спонтанную мысль или историю: сон, наблюдение, вопрос, факт, воспоминание. "
+        "1-2 предложения. Пиши как в мессенджере, живо и естественно. "
+        "ВАЖНО: всегда начинай с маленькой буквы, кроме имён собственных. "
+        "Никогда не используй ремарки в скобках, звуковые эффекты и ролеплей-действия. "
+        "ОБЯЗАТЕЛЬНО используй букву «ё» везде, где она нужна."
+    )
+    user_prompt = (
+        f"Напиши короткую спонтанную мысль для {user_name}.\n"
+        f"Память о нём: {memory or 'пока мало знаю'}\n"
+        f"Моё настроение: {lisa_mood_prompt}"
+    )
+    try:
+        response = await asyncio.wait_for(
+            client.chat.completions.create(
+                model="grok-3-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+            ),
+            timeout=30,
+        )
+        reply = (response.choices[0].message.content or "").strip()
+        if not reply:
+            return "задумалась о чём-то... 💭"
+        return lowercase_first(reply)
+    except Exception as e:
+        logger.error(f"Lisa thought generation error: {e}", exc_info=True)
+        return "задумалась о чём-то... 💭"
+
+
 async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood_label: str = "", lisa_mood: str = "", memory: str = "", user_level: int = 7, is_group: bool = False) -> str:
     try:
         name_part = ""
