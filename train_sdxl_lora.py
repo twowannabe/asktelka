@@ -78,13 +78,23 @@ def main():
         print(f"Model {DESTINATION} already exists")
     except Exception:
         print(f"Creating model {DESTINATION}...")
-        replicate.models.create(
-            owner=owner,
-            name=model_name,
-            visibility="private",
-            hardware="gpu-t4",
+        # Use raw HTTP to avoid replicate library SKU mapping bugs
+        import httpx
+        resp = httpx.post(
+            "https://api.replicate.com/v1/models",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "owner": owner,
+                "name": model_name,
+                "visibility": "private",
+                "hardware": "gpu-t4",
+            },
         )
-        print(f"Model created: {DESTINATION}")
+        if resp.status_code not in (200, 201):
+            print(f"Warning: model creation returned {resp.status_code}: {resp.text}")
+            print("Continuing anyway — training may auto-create it...")
+        else:
+            print(f"Model created: {DESTINATION}")
 
     print(f"\nStarting SDXL LoRA training → {DESTINATION}")
     print(f"Token: {TRAINING_PARAMS['token_string']}")
