@@ -43,6 +43,17 @@ GROUP_COMMENT_CHANCE = 1 / 15
 GROUP_COMMENT_BUFFER_SIZE = 20
 CHEAP_REACTION_CHANCE = 1 / 12
 MEDIA_REACTION_CHANCE = 1 / 4
+JEALOUSY_MIN_LEVEL = 4
+JEALOUSY_THRESHOLD = 10
+JEALOUSY_CHANCE = 1 / 3
+JEALOUSY_COOLDOWN_SEC = 30 * 60
+JEALOUSY_REACTIONS = [
+    "а меня тут вообще кто-нибудь замечает? 😒",
+    "ну да, общайтесь, я тут просто сижу 🙄",
+    "эй, я тоже тут 😤",
+    "забыл про меня? ну ладно 😏",
+    "а поговорить? 💔",
+]
 CHECK_LONELY_INTERVAL_SEC = 60 * 60 * 3
 
 DUMB_MODE = True
@@ -251,3 +262,5 @@ user_personalities = defaultdict(str)
 nudes_request_count = defaultdict(int)
 active_games = {}
 chat_message_buffer = defaultdict(list)  # chat_id -> list["Имя: текст"]
+jealousy_counters = defaultdict(lambda: defaultdict(int))    # chat_id -> user_id -> count
+jealousy_cooldowns = defaultdict(lambda: defaultdict(float)) # chat_id -> user_id -> timestamp

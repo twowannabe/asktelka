@@ -6,6 +6,7 @@ import os
 import re
 import random
 import asyncio
+import time
 import tempfile
 from datetime import datetime, timezone
 
@@ -21,6 +22,8 @@ from config import (
     MEDIA_REACTIONS, MEDIA_REACTION_CHANCE,
     RANDOM_GPT_RESPONSE_CHANCE,
     GROUP_COMMENT_CHANCE, GROUP_COMMENT_BUFFER_SIZE, chat_message_buffer,
+    JEALOUSY_MIN_LEVEL, JEALOUSY_THRESHOLD, JEALOUSY_CHANCE, JEALOUSY_COOLDOWN_SEC,
+    JEALOUSY_REACTIONS, jealousy_counters, jealousy_cooldowns,
     LEVEL_VOICE_UNLOCK,
     XP_PER_TEXT, XP_PER_VOICE, XP_PER_NUDES,
     MEMORY_SUMMARIZE_EVERY,
@@ -37,7 +40,7 @@ from db import (
     get_user_memory, save_user_memory, increment_memory_counter,
     get_user_achievements, grant_achievement,
 )
-from gpt import ask_chatgpt, text_to_voice, transcribe_voice, summarize_memory, generate_chat_comment, react_to_photo
+from gpt import ask_chatgpt, text_to_voice, transcribe_voice, summarize_memory, generate_chat_comment, generate_jealous_comment, react_to_photo
 from games import handle_game_response
 from utils import (
     escape_markdown_v2, lowercase_first, is_bot_enabled,
@@ -501,6 +504,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if len(buf) > GROUP_COMMENT_BUFFER_SIZE:
             del buf[: len(buf) - GROUP_COMMENT_BUFFER_SIZE]
 
+        # Jealousy mechanic for high-level users ignoring Lisa
+        jealousy_counters[chat_id][user_id] += 1
+        if (
+            user_level >= JEALOUSY_MIN_LEVEL
+            and jealousy_counters[chat_id][user_id] >= JEALOUSY_THRESHOLD
+            and time.time() - jealousy_cooldowns[chat_id][user_id] >= JEALOUSY_COOLDOWN_SEC
+            and random.random() < JEALOUSY_CHANCE
+        ):
+            try:
+                await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+                await asyncio.sleep(random.uniform(1, 3))
+                comment = await generate_jealous_comment(list(buf), user_first_name, user_level)
+                if not comment:
+                    comment = random.choice(JEALOUSY_REACTIONS)
+                await context.bot.send_message(chat_id=chat_id, text=comment)
+            except Exception as e:
+                logger.error(f"Jealousy comment error: {e}", exc_info=True)
+            jealousy_counters[chat_id][user_id] = 0
+            jealousy_cooldowns[chat_id][user_id] = time.time()
+            return
+
         if random.random() < GROUP_COMMENT_CHANCE:
             try:
                 await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
@@ -541,7 +565,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 logger.error(f"Cheap reply send error: {e}")
         return
 
-    # GPT path
+    # GPT path — user addressed the bot, reset jealousy counter
+    jealousy_counters[chat_id][user_id] = 0
+
     if not text_to_process:
         text_to_process = text
 

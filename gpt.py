@@ -48,6 +48,37 @@ async def generate_chat_comment(buffer: list[str]) -> str:
         logger.error(f"Group comment error: {e}", exc_info=True)
         return "ну вы даёте 😏"
 
+async def generate_jealous_comment(buffer: list[str], user_name: str, user_level: int) -> str:
+    personality = LEVEL_PERSONALITIES.get(user_level, LEVEL_PERSONALITIES[7])
+    system_prompt = (
+        f"{personality} "
+        f"Ты ревнуешь, что {user_name} общается с другими в чате и игнорирует тебя. "
+        "Напиши короткий ревнивый комментарий (до 15 слов), обращаясь к нему по имени. "
+        "ВАЖНО: всегда начинай с маленькой буквы, кроме имён собственных. "
+        "Никогда не используй ремарки в скобках, звуковые эффекты и ролеплей-действия. Пиши как человек в мессенджере. "
+        "ОБЯЗАТЕЛЬНО используй букву «ё» везде, где она нужна (ещё, всё, её, твоё, моё и т.д.). Никогда не заменяй «ё» на «е»."
+    )
+    conversation = "\n".join(buffer)
+    try:
+        response = await asyncio.wait_for(
+            client.chat.completions.create(
+                model="grok-3-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": conversation},
+                ],
+            ),
+            timeout=30,
+        )
+        reply = (response.choices[0].message.content or "").strip()
+        if not reply:
+            return ""
+        return lowercase_first(reply)
+    except Exception as e:
+        logger.error(f"Jealous comment error: {e}", exc_info=True)
+        return ""
+
+
 VOICE_STYLES = {
     "normal": {"stability": 0.5, "similarity_boost": 0.85, "style": 0.3},
     "whisper": {"stability": 0.18, "similarity_boost": 0.85, "style": 0.7},
