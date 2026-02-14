@@ -26,6 +26,7 @@ from config import (
     JEALOUSY_REACTIONS, jealousy_counters, jealousy_cooldowns,
     LEVEL_VOICE_UNLOCK, LEVEL_SELFIE_UNLOCK,
     XP_PER_TEXT, XP_PER_VOICE, XP_PER_NUDES, XP_PER_SELFIE,
+    XP_PER_HOROSCOPE, ZODIAC_SIGNS,
     SELFIE_CHANCE, SELFIE_CAPTIONS,
     MEMORY_SUMMARIZE_EVERY,
     ACHIEVEMENTS, ACHIEVEMENT_MESSAGES,
@@ -40,8 +41,9 @@ from db import (
     get_user_level_info, get_next_level_xp, add_xp, send_level_up, get_user_voice_chance,
     get_user_memory, save_user_memory, increment_memory_counter,
     get_user_achievements, grant_achievement,
+    get_user_zodiac, set_user_zodiac, get_last_horoscope_date, set_last_horoscope_date,
 )
-from gpt import ask_chatgpt, text_to_voice, transcribe_voice, summarize_memory, generate_chat_comment, generate_jealous_comment, react_to_photo, generate_selfie
+from gpt import ask_chatgpt, text_to_voice, transcribe_voice, summarize_memory, generate_chat_comment, generate_jealous_comment, react_to_photo, generate_selfie, generate_horoscope
 from games import handle_game_response
 from utils import (
     escape_markdown_v2, lowercase_first, is_bot_enabled,
@@ -84,7 +86,8 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/stats — статистика общения с Лизой\n"
         "/level — твой уровень и XP\n"
         "/achievements — твои ачивки\n"
-        "/selfie [подсказка] — селфи от Лизы 📸\n\n"
+        "/selfie [подсказка] — селфи от Лизы 📸\n"
+        "/horoscope [знак] — гороскоп от Лизы 🔮\n\n"
         "🎮 мини-игры:\n"
         "/truth — правда или действие (+2 XP)\n"
         "/guess — угадай число 1-100 (+3 XP)\n"
@@ -296,6 +299,54 @@ async def selfie_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     log_interaction(user_id, update.effective_user.username or "", f"/selfie {hint}".strip(), f"[selfie] {caption}")
 
     _, new_level, leveled_up = add_xp(user_id, XP_PER_SELFIE)
+    if leveled_up:
+        await send_level_up(context.bot, chat_id, new_level, update.effective_chat.type)
+
+
+# ---------------------- HOROSCOPE ----------------------
+
+async def horoscope_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+
+    arg = " ".join(context.args).strip().lower() if context.args else ""
+
+    if arg:
+        if arg not in ZODIAC_SIGNS:
+            signs_list = ", ".join(ZODIAC_SIGNS.keys())
+            await update.message.reply_text(
+                f"не знаю такого знака 😅 выбери из: {signs_list}"
+            )
+            return
+        set_user_zodiac(user_id, arg)
+        sign = arg
+    else:
+        sign = get_user_zodiac(user_id)
+        if not sign:
+            signs_list = ", ".join(ZODIAC_SIGNS.keys())
+            await update.message.reply_text(
+                f"напиши свой знак зодиака, например: /horoscope овен\n\nзнаки: {signs_list}"
+            )
+            return
+
+    today = local_now().strftime("%Y-%m-%d")
+    last_date = get_last_horoscope_date(user_id)
+    if last_date == today:
+        await update.message.reply_text("я уже делала тебе гороскоп сегодня 🔮 приходи завтра!")
+        return
+
+    user_level_info = get_user_level_info(user_id)
+    user_level = user_level_info["level"]
+
+    await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+    horoscope = await generate_horoscope(sign, user_level)
+
+    emoji = ZODIAC_SIGNS.get(sign, "🔮")
+    text = f"{emoji} {sign.capitalize()}\n\n{horoscope}"
+    await update.message.reply_text(text)
+
+    set_last_horoscope_date(user_id, today)
+    _, new_level, leveled_up = add_xp(user_id, XP_PER_HOROSCOPE)
     if leveled_up:
         await send_level_up(context.bot, chat_id, new_level, update.effective_chat.type)
 

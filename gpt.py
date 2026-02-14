@@ -209,6 +209,36 @@ async def generate_selfie(prompt_hint: str = "") -> bytes | None:
     return None
 
 
+async def generate_horoscope(sign: str, user_level: int) -> str:
+    personality = LEVEL_PERSONALITIES.get(user_level, LEVEL_PERSONALITIES[7])
+    system_prompt = (
+        f"{personality} "
+        "Напиши короткий гороскоп на сегодня (3-4 предложения) для знака зодиака. "
+        "Гороскоп должен быть в твоём стиле — дерзкий, с флиртом, с юмором. "
+        "Не пиши заголовки и не указывай знак зодиака в тексте. "
+        "ВАЖНО: всегда начинай с маленькой буквы, кроме имён собственных. "
+        "ОБЯЗАТЕЛЬНО используй букву «ё» везде, где она нужна."
+    )
+    try:
+        response = await asyncio.wait_for(
+            client.chat.completions.create(
+                model="grok-3-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Напиши гороскоп на сегодня для знака {sign}."},
+                ],
+            ),
+            timeout=30,
+        )
+        reply = (response.choices[0].message.content or "").strip()
+        if not reply:
+            return "звёзды молчат... попробуй позже 🌙"
+        return lowercase_first(reply)
+    except Exception as e:
+        logger.error(f"Horoscope generation error: {e}", exc_info=True)
+        return "звёзды молчат... попробуй позже 🌙"
+
+
 async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood_label: str = "", memory: str = "", user_level: int = 7, is_group: bool = False) -> str:
     try:
         name_part = ""
