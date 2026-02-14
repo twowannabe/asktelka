@@ -17,7 +17,7 @@ from telegram.ext import ContextTypes
 
 from config import (
     LEVELS, LOCAL_TZ,
-    NUDES_DIR, NUDES_KEYWORDS, NUDES_THRESHOLD, NUDES_THRESHOLD_BY_LEVEL, NUDES_TEASE_REPLIES, NUDES_SEND_REPLIES,
+    NUDES_KEYWORDS, NUDES_THRESHOLD, NUDES_THRESHOLD_BY_LEVEL, NUDES_TEASE_REPLIES, NUDES_SEND_REPLIES,
     EMOJI_REACTION_CHANCE, REACTION_EMOJIS, CHEAP_REACTION_CHANCE, CHEAP_REACTIONS,
     MEDIA_REACTIONS, MEDIA_REACTION_CHANCE,
     RANDOM_GPT_RESPONSE_CHANCE,
@@ -867,25 +867,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         nudes_threshold = NUDES_THRESHOLD_BY_LEVEL.get(user_level, NUDES_THRESHOLD)
         nudes_request_count[user_id] += 1
         if nudes_request_count[user_id] >= nudes_threshold:
-            photos = [f for f in os.listdir(NUDES_DIR) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))] if os.path.isdir(NUDES_DIR) else []
-            if photos:
-                photo_path = os.path.join(NUDES_DIR, random.choice(photos))
-                caption = random.choice(NUDES_SEND_REPLIES)
-                try:
-                    await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
-                    await asyncio.sleep(random.uniform(2, 5))
-                    with open(photo_path, "rb") as ph:
-                        await context.bot.send_photo(chat_id=chat_id, photo=ph, caption=caption)
+            caption = random.choice(NUDES_SEND_REPLIES)
+            try:
+                await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_PHOTO)
+                await asyncio.sleep(random.uniform(1, 3))
+                photo_bytes = await generate_selfie(base_prompt=NUDES_GEN_BASE_PROMPT)
+                if photo_bytes:
+                    await context.bot.send_photo(chat_id=chat_id, photo=io.BytesIO(photo_bytes), caption=caption)
                     nudes_request_count[user_id] = 0
-                    await run_sync(log_interaction, user_id, user_username, text, f"[nudes] {caption}")
-                    # Achievement: first_nudes
+                    await run_sync(log_interaction, user_id, user_username, text, f"[nudes_gen] {caption}")
                     await _check_and_grant(context.bot, chat_id, user_id, "first_nudes")
                     _, new_level, leveled_up = await run_sync(add_xp, user_id, XP_PER_NUDES)
                     if leveled_up:
                         await send_level_up(context.bot, chat_id, new_level, chat.type)
                     return
-                except Exception as e:
-                    logger.error(f"Nudes send error: {e}", exc_info=True)
+                else:
+                    logger.warning("Nudes generation returned None")
+            except Exception as e:
+                logger.error(f"Nudes gen error: {e}", exc_info=True)
         else:
             tease = random.choice(NUDES_TEASE_REPLIES)
             await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
