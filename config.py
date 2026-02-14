@@ -55,7 +55,9 @@ JEALOUSY_REACTIONS = [
     "забыл про меня? ну ладно 😏",
     "а поговорить? 💔",
 ]
-CHECK_LONELY_INTERVAL_SEC = 60 * 60 * 3
+CHECK_LONELY_INTERVAL_SEC = 60 * 60
+LONELY_MIN_SILENCE_HOURS = 4
+LONELY_CHECKIN_CHANCE = 0.3
 
 DUMB_MODE = True
 MAX_WORDS = 50
