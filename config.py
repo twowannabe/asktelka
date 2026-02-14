@@ -305,7 +305,7 @@ SELFIE_BASE_PROMPT = (
     "A selfie photo of LISA_FACE, smartphone camera, front-facing selfie perspective, "
     "natural lighting, casual style, cute face with a slight smirk."
 )
-SELFIE_LORA_MODEL = "twowannabe/liza:8ff0d68b"
+SELFIE_LORA_MODEL = "twowannabe/liza:8ff0d68b4e24d14a4bfd219ef763b9d015c2eff109d893fc5e8b19a448c847aa"
 SELFIE_CHANCE = 0.03
 VIDEO_NOTE_CHANCE = 1 / 30
 SELFIE_CAPTIONS = [
