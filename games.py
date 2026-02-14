@@ -9,10 +9,11 @@ from telegram.constants import ChatAction
 from telegram.ext import ContextTypes
 
 from config import (
-    XP_PER_TRUTH, XP_PER_GUESS, XP_PER_RIDDLE, XP_PER_QUIZ,
+    XP_PER_TRUTH, XP_PER_GUESS, XP_PER_RIDDLE, XP_PER_QUIZ, XP_PER_STORY,
+    STORY_TEMPLATES, LISA_MOODS,
     active_games, client, logger,
 )
-from db import add_xp, send_level_up
+from db import add_xp, send_level_up, get_user_level_info, get_lisa_mood
 from utils import lowercase_first
 
 
@@ -251,6 +252,50 @@ async def handle_game_response(user_id: int, text: str, update: Update, context:
                 await send_level_up(context.bot, chat_id, new_level)
         else:
             await update.message.reply_text(f"❌ неа, правильный ответ: {correct_answer} 😏")
+        return True
+
+    elif game["type"] == "story":
+        from gpt import generate_story_message
+
+        template_key = game["template"]
+        template = next((t for t in STORY_TEMPLATES if t["key"] == template_key), None)
+        if not template:
+            active_games.pop(user_id, None)
+            return True
+
+        game["history"].append({"role": "user", "content": text})
+        game["step"] += 1
+
+        user_name = update.effective_user.first_name or ""
+        level_info = get_user_level_info(user_id)
+        user_level = level_info["level"]
+        lisa_mood_key = get_lisa_mood()
+        lisa_mood_data = LISA_MOODS.get(lisa_mood_key, LISA_MOODS["playful"])
+
+        await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+        await asyncio.sleep(random.uniform(1, 3))
+
+        reply = await generate_story_message(
+            template=template,
+            step=game["step"],
+            max_steps=game["max_steps"],
+            history=game["history"],
+            user_name=user_name,
+            user_level=user_level,
+            lisa_mood_prompt=lisa_mood_data["prompt_mod"],
+        )
+
+        game["history"].append({"role": "assistant", "content": reply})
+
+        if game["step"] >= game["max_steps"]:
+            active_games.pop(user_id, None)
+            _, new_level, leveled_up = add_xp(user_id, XP_PER_STORY)
+            await update.message.reply_text(f"{reply}\n\n+{XP_PER_STORY} XP ⭐")
+            if leveled_up:
+                await send_level_up(context.bot, chat_id, new_level)
+        else:
+            await update.message.reply_text(reply)
+
         return True
 
     return False
