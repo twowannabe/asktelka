@@ -228,10 +228,13 @@ async def react_to_photo(image_base64: str, user_level: int = 7) -> str:
         return ""
 
 
-async def generate_selfie(prompt_hint: str = "", base_prompt: str = "") -> bytes | None:
+async def generate_selfie(prompt_hint: str = "", base_prompt: str = "", aspect_ratio: str = "") -> bytes | None:
     prompt = base_prompt or SELFIE_BASE_PROMPT
     if prompt_hint:
         prompt += f", {prompt_hint.strip()}"
+    is_nudes = base_prompt != "" and base_prompt != SELFIE_BASE_PROMPT
+    if not aspect_ratio:
+        aspect_ratio = "3:4" if is_nudes else "1:1"
     try:
         version_hash = SELFIE_LORA_MODEL.split(":")[1]
         async with httpx.AsyncClient(timeout=120) as http:
@@ -250,6 +253,7 @@ async def generate_selfie(prompt_hint: str = "", base_prompt: str = "") -> bytes
                         "guidance_scale": 3.5,
                         "num_inference_steps": 28,
                         "output_format": "jpg",
+                        "aspect_ratio": aspect_ratio,
                         "disable_safety_checker": True,
                     },
                 },

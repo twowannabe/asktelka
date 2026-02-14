@@ -165,7 +165,8 @@ NUDES_GEN_CAPTIONS = [
     "надеюсь тебе понравится 💋",
 ]
 NUDES_GEN_BASE_PROMPT = (
-    "A full body or half body photo of SWEENY_FACE, young woman, nude, "
+    "Full body photo of SWEENY_FACE, young woman, nude, showing full figure head to toes, "
+    "wide shot, full length portrait, standing pose, "
     "third person view, not a selfie, taken by someone else, "
     "amateur homemade photo, smartphone camera, slightly grainy, "
     "natural lighting, candid intimate moment, sensual pose, "
