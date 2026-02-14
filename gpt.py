@@ -252,7 +252,7 @@ async def generate_selfie(prompt_hint: str = "", base_prompt: str = "") -> bytes
                     },
                 },
             )
-            if resp.status_code not in (200, 201):
+            if resp.status_code not in (200, 201, 202):
                 logger.error(f"Replicate create error: {resp.status_code} {resp.text[:200]}")
                 return None
 
