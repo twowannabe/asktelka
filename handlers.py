@@ -27,7 +27,7 @@ from config import (
     LEVEL_VOICE_UNLOCK, LEVEL_SELFIE_UNLOCK, LEVEL_VIDEO_NOTE_UNLOCK, LEVEL_NUDES_UNLOCK,
     XP_PER_TEXT, XP_PER_VOICE, XP_PER_NUDES, XP_PER_SELFIE, XP_PER_VIDEO_NOTE,
     XP_PER_HOROSCOPE, XP_PER_DIARY, ZODIAC_SIGNS,
-    SELFIE_CHANCE, SELFIE_CAPTIONS, NUDES_GEN_CAPTIONS, NUDES_GEN_BASE_PROMPT,
+    SELFIE_CHANCE, SELFIE_CAPTIONS, SELFIES_DIR, NUDES_GEN_CAPTIONS, NUDES_GEN_BASE_PROMPT,
     VIDEO_NOTE_CHANCE, VIDEO_NOTE_CAPTIONS, VIDEO_NOTES_DIR, VIDEO_NOTE_KEYWORDS,
     STORY_TEMPLATES, STORY_CHANCE, LEVEL_STORY_UNLOCK, XP_PER_STORY,
     MEMORY_SUMMARIZE_EVERY,
@@ -405,17 +405,18 @@ async def selfie_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         )
         return
 
-    hint = " ".join(context.args).strip() if context.args else ""
-
-    await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_PHOTO)
-    photo_bytes = await generate_selfie(hint)
-    if not photo_bytes:
-        await update.message.reply_text("не получилось сделать селфи 😔 попробуй позже")
+    photos = [f for f in os.listdir(SELFIES_DIR) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))] if os.path.isdir(SELFIES_DIR) else []
+    if not photos:
+        await update.message.reply_text("у меня пока нет фоточек 😔")
         return
 
+    photo_path = os.path.join(SELFIES_DIR, random.choice(photos))
     caption = random.choice(SELFIE_CAPTIONS)
-    await context.bot.send_photo(chat_id=chat_id, photo=io.BytesIO(photo_bytes), caption=caption)
-    log_interaction(user_id, update.effective_user.username or "", f"/selfie {hint}".strip(), f"[selfie] {caption}")
+    await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_PHOTO)
+    await asyncio.sleep(random.uniform(1, 3))
+    with open(photo_path, "rb") as ph:
+        await context.bot.send_photo(chat_id=chat_id, photo=ph, caption=caption)
+    log_interaction(user_id, update.effective_user.username or "", "/selfie", f"[selfie] {caption}")
 
     _, new_level, leveled_up = add_xp(user_id, XP_PER_SELFIE)
     if leveled_up:
@@ -1154,11 +1155,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Spontaneous selfie (private chat only, level gated)
     if chat.type == "private" and user_level >= LEVEL_SELFIE_UNLOCK and random.random() < SELFIE_CHANCE * lisa_mood_data["selfie_mult"]:
         try:
-            await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_PHOTO)
-            photo_bytes = await generate_selfie()
-            if photo_bytes:
+            photos = [f for f in os.listdir(SELFIES_DIR) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))] if os.path.isdir(SELFIES_DIR) else []
+            if photos:
+                photo_path = os.path.join(SELFIES_DIR, random.choice(photos))
                 caption = random.choice(SELFIE_CAPTIONS)
-                await context.bot.send_photo(chat_id=chat_id, photo=io.BytesIO(photo_bytes), caption=caption)
+                await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_PHOTO)
+                await asyncio.sleep(random.uniform(1, 3))
+                with open(photo_path, "rb") as ph:
+                    await context.bot.send_photo(chat_id=chat_id, photo=ph, caption=caption)
         except Exception as e:
             logger.error(f"Spontaneous selfie error: {e}", exc_info=True)
 

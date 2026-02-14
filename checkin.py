@@ -10,7 +10,7 @@ from telegram.ext import CallbackContext
 from datetime import timedelta
 
 from config import (
-    CHECKIN_PHOTO_CHANCE, CHECKIN_PHOTO_CAPTIONS, NUDES_GEN_BASE_PROMPT,
+    CHECKIN_PHOTO_CHANCE, CHECKIN_PHOTO_CAPTIONS, SELFIES_DIR,
     LOCAL_TZ, VOICE_DIR_MORNING, VOICE_DIR_EVENING,
     LISA_MOODS, LISA_MOOD_TIME_WEIGHTS, LEVEL_PERSONALITIES,
     LEVEL_SELFIE_UNLOCK,
@@ -187,27 +187,12 @@ async def check_lonely_users(context: CallbackContext) -> None:
                 except Exception as e:
                     logger.error(f"Story checkin error for {user_id}: {e}", exc_info=True)
 
-            if random.random() < CHECKIN_PHOTO_CHANCE and chat_type == "private":
-                try:
-                    from gpt import generate_selfie
-                    photo_bytes = await generate_selfie(base_prompt=NUDES_GEN_BASE_PROMPT)
-                    if photo_bytes:
-                        import io
-                        caption = random.choice(CHECKIN_PHOTO_CAPTIONS)
-                        await context.bot.send_photo(chat_id=int(chat_id), photo=io.BytesIO(photo_bytes), caption=caption)
-                    else:
-                        raise ValueError("generation returned None")
-                except Exception as e:
-                    logger.warning(f"Checkin photo gen failed for {user_id}: {e}")
-                    # Fallback to text checkin
-                    mood_label = st.get("mood_label")
-                    text = await generate_checkin_text(
-                        first_name=get_casual_name(first_name), mood_label=mood_label,
-                        user_id=int(user_id), silence_hours=silence_hours,
-                    )
-                    if username:
-                        text = f"@{username}, {text[0].lower()}{text[1:]}"
-                    await send_checkin_voice_or_text(context.bot, int(chat_id), text)
+            photos = [f for f in os.listdir(SELFIES_DIR) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))] if os.path.isdir(SELFIES_DIR) else []
+            if photos and random.random() < CHECKIN_PHOTO_CHANCE and chat_type == "private":
+                photo_path = os.path.join(SELFIES_DIR, random.choice(photos))
+                caption = random.choice(CHECKIN_PHOTO_CAPTIONS)
+                with open(photo_path, "rb") as ph:
+                    await context.bot.send_photo(chat_id=int(chat_id), photo=ph, caption=caption)
             else:
                 mood_label = st.get("mood_label")
                 text = await generate_checkin_text(
@@ -322,16 +307,16 @@ async def send_ritual(context: CallbackContext) -> None:
                 user_level=user_level,
             )
 
-            # Chance for selfie
+            # Chance for selfie from folder
             if (user_level >= LEVEL_SELFIE_UNLOCK
                     and random.random() < RITUAL_SELFIE_CHANCE * lisa_mood_data.get("selfie_mult", 1.0)):
                 try:
-                    from gpt import generate_selfie
-                    photo_bytes = await generate_selfie()
-                    if photo_bytes:
-                        import io
+                    r_photos = [f for f in os.listdir(SELFIES_DIR) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))] if os.path.isdir(SELFIES_DIR) else []
+                    if r_photos:
+                        photo_path = os.path.join(SELFIES_DIR, random.choice(r_photos))
                         caption = random.choice(SELFIE_CAPTIONS)
-                        await context.bot.send_photo(chat_id=int(chat_id), photo=io.BytesIO(photo_bytes), caption=caption)
+                        with open(photo_path, "rb") as ph:
+                            await context.bot.send_photo(chat_id=int(chat_id), photo=ph, caption=caption)
                         logger.info(f"Ritual selfie sent to {user_id}")
                         continue
                 except Exception as e:

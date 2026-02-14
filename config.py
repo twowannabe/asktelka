@@ -69,7 +69,7 @@ LOCAL_TZ = pytz.timezone("Europe/Podgorica")
 # ---------------------- PATHS ----------------------
 VOICE_DIR_MORNING = os.path.join(os.path.dirname(__file__), "voices", "checkin_morning")
 VOICE_DIR_EVENING = os.path.join(os.path.dirname(__file__), "voices", "checkin_evening")
-NUDES_DIR = os.path.join(os.path.dirname(__file__), "nudes")
+SELFIES_DIR = os.path.join(os.path.dirname(__file__), "selfies")
 VIDEO_NOTES_DIR = os.path.join(os.path.dirname(__file__), "video_notes")
 NEWS_RSS_URL = config("NEWS_RSS_URL", default="")
 
