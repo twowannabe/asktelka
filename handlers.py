@@ -46,6 +46,7 @@ from db import (
     get_user_memory, save_user_memory, increment_memory_counter,
     get_user_achievements, grant_achievement,
     get_user_zodiac, set_user_zodiac, get_last_horoscope_date, set_last_horoscope_date,
+    get_top_users,
     run_sync,
 )
 from gpt import ask_chatgpt, text_to_voice, get_ogg_duration, transcribe_voice, summarize_memory, generate_chat_comment, generate_jealous_comment, react_to_photo, generate_selfie, generate_video_note, generate_horoscope, generate_diary
@@ -91,6 +92,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/stats — статистика общения с Лизой\n"
         "/level — твой уровень и XP\n"
         "/achievements — твои ачивки\n"
+        "/top — рейтинг обожателей Лизы 🏆\n"
         "/selfie [подсказка] — селфи от Лизы 📸\n"
         "/nudes [описание] — фото от Лизы 🔞\n"
         "/circle — кружочек от Лизы 🎥\n"
@@ -286,6 +288,43 @@ async def achievements_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             lines.append(f"⬜ {ach['emoji']} {ach['title']} — {ach['desc']}")
     text = "🏆 твои ачивки:\n\n" + "\n".join(lines)
     await update.message.reply_text(text)
+
+
+# ---------------------- TOP ----------------------
+
+TOP_MEDALS = ["👑", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+
+TOP_COMMENTS = [
+    "вот кто меня больше всех любит 😏",
+    "мой рейтинг самых преданных 💛",
+    "кто тут мой любимчик? 🔥",
+    "топ моих обожателей 😘",
+]
+
+async def top_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    users = await run_sync(get_top_users, 10)
+    if not users:
+        await update.message.reply_text("пока никого нет в рейтинге 😔")
+        return
+
+    caller_id = update.effective_user.id
+    lines = [f"🏆 {random.choice(TOP_COMMENTS)}\n"]
+    caller_rank = None
+
+    for i, u in enumerate(users):
+        medal = TOP_MEDALS[i] if i < len(TOP_MEDALS) else f"{i+1}."
+        name = u["first_name"] or (f"@{u['username']}" if u["username"] else f"id{u['user_id']}")
+        streak = f" 🔥{u['streak']}" if u["streak"] >= 2 else ""
+        marker = " ← это ты!" if u["user_id"] == caller_id else ""
+        lines.append(f"{medal} {name} — {u['title']} ({u['xp']} XP){streak}{marker}")
+        if u["user_id"] == caller_id:
+            caller_rank = i + 1
+
+    if caller_rank is None:
+        caller_info = get_user_level_info(caller_id)
+        lines.append(f"\nты пока не в топе ({caller_info['xp']} XP) — общайся больше! 😏")
+
+    await update.message.reply_text("\n".join(lines))
 
 
 # ---------------------- SELFIE ----------------------
