@@ -228,6 +228,40 @@ async def react_to_photo(image_base64: str, user_level: int = 7) -> str:
         return ""
 
 
+async def extract_pose_hint(text: str) -> str:
+    """Extract pose/body part description from user message for image generation."""
+    try:
+        response = await asyncio.wait_for(
+            groq_client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You extract pose or body part descriptions from Russian messages for image generation. "
+                            "Return a short English prompt (5-10 words) describing the pose or body part mentioned. "
+                            "If the message has no specific pose or body part request, return an empty string. "
+                            "Examples: 'покажи попу' -> 'showing her butt from behind', "
+                            "'ляг на кровать' -> 'lying on bed', "
+                            "'скинь сиськи' -> 'showing her breasts', "
+                            "'хочу нюдсы' -> '' (no specific pose). "
+                            "Return ONLY the English prompt or empty string, nothing else."
+                        ),
+                    },
+                    {"role": "user", "content": text},
+                ],
+                temperature=0,
+                max_tokens=30,
+            ),
+            timeout=10,
+        )
+        hint = (response.choices[0].message.content or "").strip().strip('"\'')
+        return hint
+    except Exception as e:
+        logger.error(f"Pose hint extraction error: {e}", exc_info=True)
+        return ""
+
+
 async def generate_selfie(prompt_hint: str = "", base_prompt: str = "", aspect_ratio: str = "") -> bytes | None:
     prompt = base_prompt or SELFIE_BASE_PROMPT
     if prompt_hint:

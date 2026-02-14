@@ -51,7 +51,7 @@ from db import (
     get_top_users,
     run_sync,
 )
-from gpt import ask_chatgpt, text_to_voice, get_ogg_duration, transcribe_voice, summarize_memory, generate_chat_comment, generate_jealous_comment, react_to_photo, generate_selfie, generate_video_note, generate_story_message, generate_horoscope, generate_diary
+from gpt import ask_chatgpt, text_to_voice, get_ogg_duration, transcribe_voice, summarize_memory, generate_chat_comment, generate_jealous_comment, react_to_photo, generate_selfie, generate_video_note, generate_story_message, generate_horoscope, generate_diary, extract_pose_hint
 from games import handle_game_response
 from utils import (
     escape_markdown_v2, lowercase_first, is_bot_enabled,
@@ -872,7 +872,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             try:
                 await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_PHOTO)
                 await asyncio.sleep(random.uniform(1, 3))
-                photo_bytes = await generate_selfie(base_prompt=NUDES_GEN_BASE_PROMPT)
+                pose_hint = await extract_pose_hint(text)
+                photo_bytes = await generate_selfie(prompt_hint=pose_hint, base_prompt=NUDES_GEN_BASE_PROMPT)
                 if photo_bytes:
                     await context.bot.send_photo(chat_id=chat_id, photo=io.BytesIO(photo_bytes), caption=caption)
                     nudes_request_count[user_id] = 0
