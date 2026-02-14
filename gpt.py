@@ -188,7 +188,7 @@ async def react_to_photo(image_base64: str, user_level: int = 7) -> str:
         return ""
 
 
-async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood_label: str = "", memory: str = "", user_level: int = 7) -> str:
+async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood_label: str = "", memory: str = "", user_level: int = 7, is_group: bool = False) -> str:
     try:
         name_part = ""
         if user_name and user_level >= 3:
@@ -220,6 +220,12 @@ async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood
 
         if memory:
             system_prompt += f" Вот что ты помнишь о пользователе из прошлых разговоров: {memory}"
+
+        if is_group:
+            system_prompt += (
+                " Ты в групповом чате. Сообщения пользователей помечены их именами в формате «Имя: текст». "
+                "Отвечай тому, кто к тебе обратился. Не путай участников между собой."
+            )
 
         if random.random() < QUOTE_CHANCE and len(messages) >= 1:
             last_user_msg = next((m["content"] for m in reversed(messages) if m["role"] == "user"), None)

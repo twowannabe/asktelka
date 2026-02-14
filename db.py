@@ -99,6 +99,11 @@ def init_db():
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_conv_user ON conversation_history(user_id, created_at DESC)")
 
+        # Group conversation migrations
+        cur.execute("ALTER TABLE conversation_history ADD COLUMN IF NOT EXISTS chat_id BIGINT")
+        cur.execute("ALTER TABLE conversation_history ADD COLUMN IF NOT EXISTS sender_name TEXT DEFAULT ''")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_conv_chat ON conversation_history(chat_id, created_at DESC)")
+
         # Level system migrations
         cur.execute("ALTER TABLE user_state ADD COLUMN IF NOT EXISTS xp INTEGER DEFAULT 0")
         cur.execute("ALTER TABLE user_state ADD COLUMN IF NOT EXISTS level INTEGER DEFAULT 1")
@@ -147,13 +152,13 @@ def log_interaction(user_id, user_username, user_message, gpt_reply):
         logger.error(f"DB log_interaction error: {e}", exc_info=True)
 
 
-def save_message(user_id: int, role: str, content: str):
+def save_message(user_id: int, role: str, content: str, chat_id: int = None, sender_name: str = ""):
     try:
         conn = get_db_connection()
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO conversation_history (user_id, role, content) VALUES (%s, %s, %s)",
-            (user_id, role, content),
+            "INSERT INTO conversation_history (user_id, role, content, chat_id, sender_name) VALUES (%s, %s, %s, %s, %s)",
+            (user_id, role, content, chat_id, sender_name),
         )
         conn.commit()
         cur.close()
@@ -176,6 +181,29 @@ def load_context(user_id: int, limit: int = 10) -> list[dict]:
         return [{"role": r[0], "content": r[1]} for r in reversed(rows)]
     except Exception as e:
         logger.error(f"DB load_context error: {e}", exc_info=True)
+        return []
+
+
+def load_group_context(chat_id: int, limit: int = 20) -> list[dict]:
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT role, content, sender_name FROM conversation_history WHERE chat_id=%s ORDER BY created_at DESC LIMIT %s",
+            (chat_id, limit),
+        )
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        result = []
+        for role, content, sender_name in reversed(rows):
+            if role == "user" and sender_name:
+                result.append({"role": "user", "content": f"{sender_name}: {content}"})
+            else:
+                result.append({"role": role, "content": content})
+        return result
+    except Exception as e:
+        logger.error(f"DB load_group_context error: {e}", exc_info=True)
         return []
 
 

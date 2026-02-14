@@ -32,7 +32,7 @@ from config import (
     logger,
 )
 from db import (
-    get_db_connection, log_interaction, save_message, load_context, clear_context,
+    get_db_connection, log_interaction, save_message, load_context, load_group_context, clear_context,
     load_user_personality_from_db, upsert_user_personality,
     update_last_interaction, ensure_user_state_row,
     set_do_not_write_first, get_user_settings, set_cheap_cooldown, set_mood,
@@ -325,14 +325,19 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     st = get_user_settings(user_id)
     user_mood = st.get("mood_label") or ""
 
-    save_message(user_id, "user", text)
+    is_group = chat.type != "private"
+
+    save_message(user_id, "user", text, chat_id=chat_id, sender_name=user_first_name)
 
     count = increment_memory_counter(user_id)
     if count >= MEMORY_SUMMARIZE_EVERY:
         asyncio.create_task(_update_memory(user_id))
 
     memory = get_user_memory(user_id)
-    messages = load_context(user_id, limit=10)
+    if is_group:
+        messages = load_group_context(chat_id, limit=20)
+    else:
+        messages = load_context(user_id, limit=10)
 
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
     await asyncio.sleep(random.uniform(1, 2))
@@ -344,12 +349,13 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         mood_label=user_mood,
         memory=memory,
         user_level=user_level,
+        is_group=is_group,
     )
 
     if not reply.strip():
         reply = "ммм… напиши ещё 😅"
 
-    save_message(user_id, "assistant", reply)
+    save_message(user_id, "assistant", reply, chat_id=chat_id, sender_name="Лиза")
 
     reply_to_message_id = update.message.message_id
 
@@ -469,7 +475,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     should_gpt = False
     text_to_process = ""
     reply_to_message_id = update.message.message_id
-    bot_original_text = ""  # for group reply chains
+    reply_context = ""  # text of the message being replied to
 
     if chat.type == "private":
         should_gpt = True
@@ -481,17 +487,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     elif is_reply_to_bot:
         should_gpt = True
+        original_text = update.message.reply_to_message.text or update.message.reply_to_message.caption or ""
+        if original_text.strip():
+            reply_context = original_text.strip()
         text_to_process = text
-        bot_original_text = update.message.reply_to_message.text or update.message.reply_to_message.caption or ""
 
     elif is_reply and is_bot_mentioned:
+        should_gpt = True
         original = update.message.reply_to_message.text or update.message.reply_to_message.caption or ""
         if original.strip():
-            should_gpt = True
-            text_to_process = original.strip()
-        else:
-            await update.message.reply_text("я не вижу текста в исходном сообщении 😔", reply_to_message_id=reply_to_message_id)
-            return
+            reply_context = original.strip()
+        text_to_process = re.sub(rf"@{re.escape(bot_username)}", "", text, flags=re.IGNORECASE).strip() or text
 
     elif random.random() < RANDOM_GPT_RESPONSE_CHANCE:
         should_gpt = True
@@ -571,23 +577,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not text_to_process:
         text_to_process = text
 
+    # Prepend reply context to the message
+    if reply_context:
+        text_to_process = f'[в ответ на: "{reply_context}"] {text_to_process}'
+
+    is_group = chat.type != "private"
+
     personality = user_personalities.get(user_id) or load_user_personality_from_db(user_id) or ""
     st = get_user_settings(user_id)
     user_mood = st.get("mood_label") or ""
 
-    save_message(user_id, "user", text_to_process)
+    save_message(user_id, "user", text_to_process, chat_id=chat_id, sender_name=user_first_name)
 
     count = increment_memory_counter(user_id)
     if count >= MEMORY_SUMMARIZE_EVERY:
         asyncio.create_task(_update_memory(user_id))
 
     memory = get_user_memory(user_id)
-    messages = load_context(user_id, limit=10)
-
-    # Inject bot's original message for group reply chains
-    if bot_original_text:
-        messages.append({"role": "assistant", "content": bot_original_text})
-        messages.append({"role": "user", "content": text_to_process})
+    if is_group:
+        messages = load_group_context(chat_id, limit=20)
+    else:
+        messages = load_context(user_id, limit=10)
 
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
     await asyncio.sleep(random.uniform(1, 4))
@@ -599,12 +609,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         mood_label=user_mood,
         memory=memory,
         user_level=user_level,
+        is_group=is_group,
     )
 
     if not reply.strip():
         reply = "ммм… напиши ещё 😅"
 
-    save_message(user_id, "assistant", reply)
+    save_message(user_id, "assistant", reply, chat_id=chat_id, sender_name="Лиза")
 
     # Detect requested voice style
     voice_style = ""
