@@ -10,7 +10,7 @@ from config import (
     REPLICATE_API_TOKEN,
     MAX_VOICE_WORDS,
     LEVEL_PERSONALITIES, SELFIE_BASE_PROMPT, SELFIE_LORA_MODEL, NUDES_LORA_MODEL,
-    SVD_MODEL_VERSION, SVD_MOTION_BUCKET_ID, SVD_FRAMES_PER_SECOND,
+    WAN_I2V_MODEL,
     client, groq_client, default_personality, logger,
 )
 from base64 import b64encode, b64decode
@@ -345,7 +345,7 @@ async def generate_selfie(prompt_hint: str = "", base_prompt: str = "", aspect_r
 
 
 async def generate_video_note(prompt_hint: str = "") -> bytes | None:
-    """Generate an animated video note: selfie → SVD animation → square MP4."""
+    """Generate an animated video note: selfie → Wan 2.1 I2V → square MP4."""
     import subprocess
     import tempfile
 
@@ -361,26 +361,25 @@ async def generate_video_note(prompt_hint: str = "") -> bytes | None:
         image_uri = f"data:image/jpeg;base64,{image_b64}"
 
         async with httpx.AsyncClient(timeout=30) as http:
-            # Step 3: create SVD prediction
+            # Step 3: create Wan 2.1 I2V prediction
             resp = await http.post(
-                "https://api.replicate.com/v1/predictions",
+                f"https://api.replicate.com/v1/models/{WAN_I2V_MODEL}/predictions",
                 headers={
                     "Authorization": f"Bearer {REPLICATE_API_TOKEN}",
                     "Content-Type": "application/json",
                 },
                 json={
-                    "version": SVD_MODEL_VERSION,
                     "input": {
-                        "input_image": image_uri,
-                        "video_length": "14_frames_with_svd",
-                        "frames_per_second": SVD_FRAMES_PER_SECOND,
-                        "motion_bucket_id": SVD_MOTION_BUCKET_ID,
-                        "sizing_strategy": "maintain_aspect_ratio",
+                        "image": image_uri,
+                        "prompt": prompt_hint or "a woman looking at camera, subtle natural movement, breathing",
+                        "num_inference_steps": 30,
+                        "duration": 5,
+                        "size": "480*832",
                     },
                 },
             )
             if resp.status_code not in (200, 201, 202):
-                logger.error(f"SVD create error: {resp.status_code} {resp.text[:200]}")
+                logger.error(f"Wan I2V create error: {resp.status_code} {resp.text[:200]}")
                 return None
 
             prediction = resp.json()
@@ -389,9 +388,9 @@ async def generate_video_note(prompt_hint: str = "") -> bytes | None:
                 or f"https://api.replicate.com/v1/predictions/{prediction['id']}"
             )
 
-        # Step 4: poll for completion (up to 180 sec)
+        # Step 4: poll for completion (up to 300 sec)
         async with httpx.AsyncClient(timeout=30) as http:
-            for _ in range(90):
+            for _ in range(150):
                 await asyncio.sleep(2)
                 poll = await http.get(
                     poll_url,
@@ -404,18 +403,17 @@ async def generate_video_note(prompt_hint: str = "") -> bytes | None:
                     if not output:
                         return None
                     video_url = output if isinstance(output, str) else output[0]
-                    # Download the MP4
                     vid_resp = await http.get(video_url)
                     if vid_resp.status_code != 200:
-                        logger.error(f"SVD video download failed: {vid_resp.status_code}")
+                        logger.error(f"Wan I2V video download failed: {vid_resp.status_code}")
                         return None
                     mp4_input = vid_resp.content
                     break
                 elif status in ("failed", "canceled"):
-                    logger.error(f"SVD prediction failed: {data.get('error')}")
+                    logger.error(f"Wan I2V prediction failed: {data.get('error')}")
                     return None
             else:
-                logger.error("SVD prediction timed out")
+                logger.error("Wan I2V prediction timed out")
                 return None
 
         # Step 5a: generate whisper audio for the video note

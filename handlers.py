@@ -472,7 +472,7 @@ async def circle_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     hint = " ".join(context.args).strip() if context.args else ""
 
     # Try generating a video note on the fly
-    await update.message.reply_text("подожди, записываю кружочек... 📹")
+    await update.message.reply_text("подожди, записываю кружочек...")
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_VIDEO_NOTE)
     video_bytes = await generate_video_note(hint)
 
