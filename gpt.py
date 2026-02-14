@@ -362,21 +362,26 @@ async def generate_video_note(prompt_hint: str = "") -> bytes | None:
                 return None
 
         # Step 5: ffmpeg — crop to square and re-encode
-        # SVD outputs 1024x576; crop center 576x576 then scale to 512x512
-        # Use tempfile for output since -movflags +faststart needs seekable output
-        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
-            tmp_path = tmp.name
+        # MP4 needs seekable input and output, so use tempfiles for both
+        import os
+        in_tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
+        out_tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
+        in_path, out_path = in_tmp.name, out_tmp.name
+        in_tmp.close()
+        out_tmp.close()
 
         try:
+            with open(in_path, "wb") as f:
+                f.write(mp4_input)
+
             proc = subprocess.run(
                 [
-                    "ffmpeg", "-y", "-i", "pipe:0",
+                    "ffmpeg", "-y", "-i", in_path,
                     "-vf", "crop='min(iw,ih)':'min(iw,ih)',scale=512:512",
                     "-c:v", "libx264", "-pix_fmt", "yuv420p",
                     "-movflags", "+faststart",
-                    "-an", "-f", "mp4", tmp_path,
+                    "-an", "-f", "mp4", out_path,
                 ],
-                input=mp4_input,
                 capture_output=True,
                 timeout=30,
             )
@@ -384,19 +389,18 @@ async def generate_video_note(prompt_hint: str = "") -> bytes | None:
                 logger.error(f"ffmpeg crop error: {proc.stderr[-500:]}")
                 return None
 
-            import os
-            with open(tmp_path, "rb") as f:
+            with open(out_path, "rb") as f:
                 result = f.read()
-            os.unlink(tmp_path)
             return result if result else None
         except Exception as e:
             logger.error(f"ffmpeg video note error: {e}", exc_info=True)
-            try:
-                import os
-                os.unlink(tmp_path)
-            except OSError:
-                pass
             return None
+        finally:
+            for p in (in_path, out_path):
+                try:
+                    os.unlink(p)
+                except OSError:
+                    pass
 
     except Exception as e:
         logger.error(f"Video note generation error: {e}", exc_info=True)
