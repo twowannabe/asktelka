@@ -249,6 +249,7 @@ async def generate_selfie(prompt_hint: str = "", base_prompt: str = "") -> bytes
                         "guidance_scale": 3.5,
                         "num_inference_steps": 28,
                         "output_format": "jpg",
+                        "disable_safety_checker": True,
                     },
                 },
             )
