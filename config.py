@@ -241,6 +241,26 @@ LEVEL_PERSONALITIES = {
 
 LEVEL_VOICE_UNLOCK = 3
 LEVEL_NUDES_UNLOCK = 5
+LEVEL_SELFIE_UNLOCK = 3
+
+SELFIE_BASE_PROMPT = (
+    "A selfie photo of a young Eastern European woman in her early 20s, "
+    "slim build, long dark brown hair, brown eyes, light skin, natural makeup, "
+    "cute face with a slight smirk. Smartphone camera, front-facing selfie perspective, "
+    "natural lighting, casual style."
+)
+SELFIE_CHANCE = 0.03
+SELFIE_CAPTIONS = [
+    "вот, держи моё селфи 🙈",
+    "это я прямо сейчас 😏",
+    "ловии 📸",
+    "вот такая я сегодня 💋",
+    "смотри какая 🔥",
+    "только для тебя 😘",
+    "ну как я? 🥰",
+    "скучала, вот тебе фоточка 💛",
+]
+XP_PER_SELFIE = 2
 
 default_personality = (
     "Ты Лиза — дерзкая, раскрепощённая, пошлая и развратная девушка. "

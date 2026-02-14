@@ -8,10 +8,10 @@ import httpx
 from config import (
     ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID,
     MAX_VOICE_WORDS, QUOTE_CHANCE,
-    LEVEL_PERSONALITIES,
+    LEVEL_PERSONALITIES, SELFIE_BASE_PROMPT,
     client, groq_client, default_personality, logger,
 )
-from base64 import b64encode
+from base64 import b64encode, b64decode
 from utils import lowercase_first
 
 
@@ -186,6 +186,27 @@ async def react_to_photo(image_base64: str, user_level: int = 7) -> str:
     except Exception as e:
         logger.error(f"Vision API error: {e}", exc_info=True)
         return ""
+
+
+async def generate_selfie(prompt_hint: str = "") -> bytes | None:
+    prompt = SELFIE_BASE_PROMPT
+    if prompt_hint:
+        prompt += f" {prompt_hint.strip()}"
+    try:
+        response = await asyncio.wait_for(
+            client.images.generate(
+                model="grok-2-image",
+                prompt=prompt,
+                response_format="b64_json",
+            ),
+            timeout=60,
+        )
+        b64_data = response.data[0].b64_json
+        if b64_data:
+            return b64decode(b64_data)
+    except Exception as e:
+        logger.error(f"Selfie generation error: {e}", exc_info=True)
+    return None
 
 
 async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood_label: str = "", memory: str = "", user_level: int = 7, is_group: bool = False) -> str:

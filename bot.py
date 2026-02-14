@@ -20,6 +20,7 @@ from handlers import (
     start_cmd, help_cmd, stats_cmd, level_cmd, achievements_cmd,
     set_personality_cmd, dontwritefirst_cmd, writefirst_cmd,
     mood_cmd, clear_mood_cmd, disable_cmd, reset_cmd,
+    selfie_cmd,
     handle_message, handle_voice, handle_media, error_handler,
 )
 from games import truth_cmd, guess_cmd, riddle_cmd, quiz_cmd, quiz_callback
@@ -44,6 +45,7 @@ def main():
     application.add_handler(CommandHandler("stats", stats_cmd))
     application.add_handler(CommandHandler("level", level_cmd))
     application.add_handler(CommandHandler("achievements", achievements_cmd))
+    application.add_handler(CommandHandler("selfie", selfie_cmd))
 
     # Mini-games
     application.add_handler(CommandHandler("truth", truth_cmd))

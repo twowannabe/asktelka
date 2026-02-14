@@ -24,8 +24,9 @@ from config import (
     GROUP_COMMENT_CHANCE, GROUP_COMMENT_BUFFER_SIZE, chat_message_buffer,
     JEALOUSY_MIN_LEVEL, JEALOUSY_THRESHOLD, JEALOUSY_CHANCE, JEALOUSY_COOLDOWN_SEC,
     JEALOUSY_REACTIONS, jealousy_counters, jealousy_cooldowns,
-    LEVEL_VOICE_UNLOCK,
-    XP_PER_TEXT, XP_PER_VOICE, XP_PER_NUDES,
+    LEVEL_VOICE_UNLOCK, LEVEL_SELFIE_UNLOCK,
+    XP_PER_TEXT, XP_PER_VOICE, XP_PER_NUDES, XP_PER_SELFIE,
+    SELFIE_CHANCE, SELFIE_CAPTIONS,
     MEMORY_SUMMARIZE_EVERY,
     ACHIEVEMENTS, ACHIEVEMENT_MESSAGES,
     disabled_chats, user_personalities, nudes_request_count, active_games,
@@ -40,7 +41,7 @@ from db import (
     get_user_memory, save_user_memory, increment_memory_counter,
     get_user_achievements, grant_achievement,
 )
-from gpt import ask_chatgpt, text_to_voice, transcribe_voice, summarize_memory, generate_chat_comment, generate_jealous_comment, react_to_photo
+from gpt import ask_chatgpt, text_to_voice, transcribe_voice, summarize_memory, generate_chat_comment, generate_jealous_comment, react_to_photo, generate_selfie
 from games import handle_game_response
 from utils import (
     escape_markdown_v2, lowercase_first, is_bot_enabled,
@@ -82,7 +83,8 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/clear_mood — очистить память настроения\n"
         "/stats — статистика общения с Лизой\n"
         "/level — твой уровень и XP\n"
-        "/achievements — твои ачивки\n\n"
+        "/achievements — твои ачивки\n"
+        "/selfie [подсказка] — селфи от Лизы 📸\n\n"
         "🎮 мини-игры:\n"
         "/truth — правда или действие (+2 XP)\n"
         "/guess — угадай число 1-100 (+3 XP)\n"
@@ -265,6 +267,37 @@ async def achievements_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             lines.append(f"⬜ {ach['emoji']} {ach['title']} — {ach['desc']}")
     text = "🏆 твои ачивки:\n\n" + "\n".join(lines)
     await update.message.reply_text(text)
+
+
+# ---------------------- SELFIE ----------------------
+
+async def selfie_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+    user_level_info = get_user_level_info(user_id)
+    user_level = user_level_info["level"]
+
+    if user_level < LEVEL_SELFIE_UNLOCK:
+        await update.message.reply_text(
+            f"селфи доступны с уровня {LEVEL_SELFIE_UNLOCK} 😏 пока пообщаемся?"
+        )
+        return
+
+    hint = " ".join(context.args).strip() if context.args else ""
+
+    await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_PHOTO)
+    photo_bytes = await generate_selfie(hint)
+    if not photo_bytes:
+        await update.message.reply_text("не получилось сделать селфи 😔 попробуй позже")
+        return
+
+    caption = random.choice(SELFIE_CAPTIONS)
+    await context.bot.send_photo(chat_id=chat_id, photo=io.BytesIO(photo_bytes), caption=caption)
+    log_interaction(user_id, update.effective_user.username or "", f"/selfie {hint}".strip(), f"[selfie] {caption}")
+
+    _, new_level, leveled_up = add_xp(user_id, XP_PER_SELFIE)
+    if leveled_up:
+        await send_level_up(context.bot, chat_id, new_level, update.effective_chat.type)
 
 
 # ---------------------- MESSAGE HANDLERS ----------------------
@@ -683,6 +716,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Achievement: streak_7
     if get_user_level_info(user_id)["streak_days"] >= 7:
         await _check_and_grant(context.bot, chat_id, user_id, "streak_7")
+
+    # Spontaneous selfie (private chat only, level gated)
+    if chat.type == "private" and user_level >= LEVEL_SELFIE_UNLOCK and random.random() < SELFIE_CHANCE:
+        try:
+            await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_PHOTO)
+            photo_bytes = await generate_selfie()
+            if photo_bytes:
+                caption = random.choice(SELFIE_CAPTIONS)
+                await context.bot.send_photo(chat_id=chat_id, photo=io.BytesIO(photo_bytes), caption=caption)
+        except Exception as e:
+            logger.error(f"Spontaneous selfie error: {e}", exc_info=True)
 
 
 async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
