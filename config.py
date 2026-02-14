@@ -163,8 +163,9 @@ NUDES_GEN_CAPTIONS = [
     "надеюсь тебе понравится 💋",
 ]
 NUDES_GEN_BASE_PROMPT = (
-    "A photo of LISA_FACE, beautiful young woman, "
-    "professional photography, soft natural lighting, warm tones, high quality."
+    "A photo of LISA_FACE, young woman, amateur homemade photo, "
+    "smartphone camera, slightly grainy, casual imperfect framing, "
+    "natural lighting, candid intimate moment."
 )
 
 MEDIA_REACTIONS = [
