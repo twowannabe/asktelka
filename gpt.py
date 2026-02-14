@@ -8,7 +8,7 @@ import httpx
 from config import (
     ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID,
     REPLICATE_API_TOKEN,
-    MAX_VOICE_WORDS, QUOTE_CHANCE,
+    MAX_VOICE_WORDS,
     LEVEL_PERSONALITIES, SELFIE_BASE_PROMPT, SELFIE_LORA_MODEL,
     client, groq_client, default_personality, logger,
 )
@@ -417,6 +417,8 @@ async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood
             "Никогда не используй ремарки в скобках вроде [шёпотом], *обнимает*, (целует). "
             "Никогда не пиши звуковые эффекты и ролеплей-действия (ааах, мммм, шлёп, хлоп, муах и т.п.). "
             "Пиши как живой человек в мессенджере, а не как персонаж ролевой игры. "
+            "НИКОГДА не повторяй и не цитируй слова пользователя. Не пересказывай то, что он написал. "
+            "Не используй конструкции вроде «ты сказал...», «ты написал...», «...серьёзно?!». Отвечай своими словами. "
             "ОБЯЗАТЕЛЬНО используй букву «ё» везде, где она нужна (ещё, всё, её, твоё, моё, горячёе, тёплый и т.д.). Никогда не заменяй «ё» на «е»."
             f"{name_part}{mood_part}{lisa_mood_part}"
         )
@@ -429,15 +431,6 @@ async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood
                 " Ты в групповом чате. Сообщения пользователей помечены их именами в формате «Имя: текст». "
                 "Отвечай тому, кто к тебе обратился. Не путай участников между собой."
             )
-
-        if random.random() < QUOTE_CHANCE and len(messages) >= 1:
-            last_user_msg = next((m["content"] for m in reversed(messages) if m["role"] == "user"), None)
-            if last_user_msg and len(last_user_msg) > 5:
-                system_prompt += (
-                    f' В этом ответе обязательно процитируй фразу пользователя '
-                    f'(или её часть) и отреагируй на неё. Например: '
-                    f'"ты сказал «...» — ну ты даёшь" или "«...» — серьёзно?!"'
-                )
 
         if not messages or messages[0]["role"] != "system":
             messages = [{"role": "system", "content": system_prompt}] + messages
