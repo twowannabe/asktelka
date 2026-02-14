@@ -31,6 +31,7 @@ from config import (
     VIDEO_NOTE_CHANCE, VIDEO_NOTE_CAPTIONS, VIDEO_NOTES_DIR,
     MEMORY_SUMMARIZE_EVERY,
     ACHIEVEMENTS, ACHIEVEMENT_MESSAGES,
+    LISA_MOODS,
     disabled_chats, user_personalities, nudes_request_count, active_games,
     logger,
 )
@@ -39,6 +40,7 @@ from db import (
     load_user_personality_from_db, upsert_user_personality,
     update_last_interaction, ensure_user_state_row,
     set_do_not_write_first, get_user_settings, set_cheap_cooldown, set_mood,
+    get_lisa_mood,
     get_user_level_info, get_next_level_xp, add_xp, send_level_up, get_user_voice_chance,
     get_user_memory, save_user_memory, increment_memory_counter,
     get_user_achievements, grant_achievement,
@@ -89,7 +91,8 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/achievements — твои ачивки\n"
         "/selfie [подсказка] — селфи от Лизы 📸\n"
         "/circle — кружочек от Лизы 🎥\n"
-        "/horoscope [знак] — гороскоп от Лизы 🔮\n\n"
+        "/horoscope [знак] — гороскоп от Лизы 🔮\n"
+        "/mood_lisa — узнать настроение Лизы\n\n"
         "🎮 мини-игры:\n"
         "/truth — правда или действие (+2 XP)\n"
         "/guess — угадай число 1-100 (+3 XP)\n"
@@ -213,6 +216,12 @@ async def clear_mood_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_id = update.effective_user.id
     set_mood(user_id, None, "")
     await update.message.reply_text("окей. я очистила память про настроение ✨")
+
+
+async def mood_lisa_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    lisa_mood_key = get_lisa_mood()
+    lisa_mood_data = LISA_MOODS.get(lisa_mood_key, LISA_MOODS["playful"])
+    await update.message.reply_text(f"сейчас я {lisa_mood_data['label']}")
 
 
 async def disable_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -449,6 +458,9 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     st = get_user_settings(user_id)
     user_mood = st.get("mood_label") or ""
 
+    lisa_mood_key = get_lisa_mood()
+    lisa_mood_data = LISA_MOODS.get(lisa_mood_key, LISA_MOODS["playful"])
+
     is_group = chat.type != "private"
 
     save_message(user_id, "user", text, chat_id=chat_id, sender_name=user_first_name)
@@ -471,6 +483,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         user_name=user_first_name,
         personality=personality,
         mood_label=user_mood,
+        lisa_mood=lisa_mood_data["prompt_mod"],
         memory=memory,
         user_level=user_level,
         is_group=is_group,
@@ -711,6 +724,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     st = get_user_settings(user_id)
     user_mood = st.get("mood_label") or ""
 
+    lisa_mood_key = get_lisa_mood()
+    lisa_mood_data = LISA_MOODS.get(lisa_mood_key, LISA_MOODS["playful"])
+
     save_message(user_id, "user", text_to_process, chat_id=chat_id, sender_name=user_first_name)
 
     count = increment_memory_counter(user_id)
@@ -731,6 +747,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         user_name=user_first_name,
         personality=personality,
         mood_label=user_mood,
+        lisa_mood=lisa_mood_data["prompt_mod"],
         memory=memory,
         user_level=user_level,
         is_group=is_group,
@@ -809,7 +826,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await _check_and_grant(context.bot, chat_id, user_id, "streak_7")
 
     # Spontaneous selfie (private chat only, level gated)
-    if chat.type == "private" and user_level >= LEVEL_SELFIE_UNLOCK and random.random() < SELFIE_CHANCE:
+    if chat.type == "private" and user_level >= LEVEL_SELFIE_UNLOCK and random.random() < SELFIE_CHANCE * lisa_mood_data["selfie_mult"]:
         try:
             await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_PHOTO)
             photo_bytes = await generate_selfie()
@@ -820,7 +837,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             logger.error(f"Spontaneous selfie error: {e}", exc_info=True)
 
     # Spontaneous video note (private chat only, level gated)
-    if chat.type == "private" and user_level >= LEVEL_VIDEO_NOTE_UNLOCK and random.random() < VIDEO_NOTE_CHANCE:
+    if chat.type == "private" and user_level >= LEVEL_VIDEO_NOTE_UNLOCK and random.random() < VIDEO_NOTE_CHANCE * lisa_mood_data["circle_mult"]:
         try:
             if os.path.isdir(VIDEO_NOTES_DIR):
                 videos = [f for f in os.listdir(VIDEO_NOTES_DIR) if f.lower().endswith(".mp4")]
