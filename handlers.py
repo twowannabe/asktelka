@@ -1402,6 +1402,24 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if chat.type != "private" and not is_bot_enabled(chat_id):
         return
 
+    # Challenge: if user has active challenge and sends a photo, verify it
+    game = active_games.get(user_id)
+    if game and game["type"] == "challenge" and update.message.photo:
+        caption = (update.message.caption or "").strip()
+        description = f"[пользователь отправил фото] {caption}" if caption else "[пользователь отправил фото]"
+        from gpt import verify_challenge
+        from config import XP_PER_CHALLENGE
+        done, comment = await verify_challenge(game["challenge"], description)
+        if done:
+            active_games.pop(user_id, None)
+            _, new_level, leveled_up = add_xp(user_id, XP_PER_CHALLENGE)
+            await update.message.reply_text(f"{comment}\n\n+{XP_PER_CHALLENGE} XP ⭐")
+            if leveled_up:
+                await send_level_up(context.bot, chat_id, new_level)
+        else:
+            await update.message.reply_text(comment)
+        return
+
     is_private = chat.type == "private"
     reaction_chance = PHOTO_REACTION_CHANCE_PRIVATE if is_private else PHOTO_REACTION_CHANCE_GROUP
     if random.random() > reaction_chance:
