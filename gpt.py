@@ -9,7 +9,7 @@ from config import (
     ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID,
     REPLICATE_API_TOKEN,
     MAX_VOICE_WORDS,
-    LEVEL_PERSONALITIES, SELFIE_BASE_PROMPT, SELFIE_LORA_MODEL,
+    LEVEL_PERSONALITIES, SELFIE_BASE_PROMPT, SELFIE_LORA_MODEL, NUDES_LORA_MODEL,
     SVD_MODEL_VERSION, SVD_MOTION_BUCKET_ID, SVD_FRAMES_PER_SECOND,
     client, groq_client, default_personality, logger,
 )
@@ -236,7 +236,34 @@ async def generate_selfie(prompt_hint: str = "", base_prompt: str = "", aspect_r
     if not aspect_ratio:
         aspect_ratio = "3:4" if is_nudes else "1:1"
     try:
-        version_hash = SELFIE_LORA_MODEL.split(":")[1]
+        # Use SDXL LoRA for nudes if available, otherwise Flux for everything
+        use_sdxl = is_nudes and NUDES_LORA_MODEL
+        if use_sdxl:
+            model = NUDES_LORA_MODEL
+            input_params = {
+                "prompt": prompt,
+                "negative_prompt": "deformed, ugly, bad anatomy, extra limbs, blurry, watermark, text",
+                "num_outputs": 1,
+                "guidance_scale": 7.5,
+                "num_inference_steps": 40,
+                "width": 768,
+                "height": 1024,
+                "scheduler": "K_EULER",
+                "disable_safety_checker": True,
+            }
+        else:
+            model = SELFIE_LORA_MODEL
+            input_params = {
+                "prompt": prompt,
+                "num_outputs": 1,
+                "guidance_scale": 3.5,
+                "num_inference_steps": 28,
+                "output_format": "jpg",
+                "aspect_ratio": aspect_ratio,
+                "disable_safety_checker": True,
+            }
+
+        version_hash = model.split(":")[1]
         async with httpx.AsyncClient(timeout=120) as http:
             resp = await http.post(
                 "https://api.replicate.com/v1/predictions",
@@ -247,15 +274,7 @@ async def generate_selfie(prompt_hint: str = "", base_prompt: str = "", aspect_r
                 },
                 json={
                     "version": version_hash,
-                    "input": {
-                        "prompt": prompt,
-                        "num_outputs": 1,
-                        "guidance_scale": 3.5,
-                        "num_inference_steps": 28,
-                        "output_format": "jpg",
-                        "aspect_ratio": aspect_ratio,
-                        "disable_safety_checker": True,
-                    },
+                    "input": input_params,
                 },
             )
             if resp.status_code not in (200, 201, 202):
