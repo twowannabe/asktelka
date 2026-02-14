@@ -371,7 +371,7 @@ async def generate_video_note(prompt_hint: str = "") -> bytes | None:
             proc = subprocess.run(
                 [
                     "ffmpeg", "-y", "-i", "pipe:0",
-                    "-vf", "crop=min(iw\\,ih):min(iw\\,ih),scale=512:512",
+                    "-vf", "crop='min(iw,ih)':'min(iw,ih)',scale=512:512",
                     "-c:v", "libx264", "-pix_fmt", "yuv420p",
                     "-movflags", "+faststart",
                     "-an", "-f", "mp4", tmp_path,
@@ -381,7 +381,7 @@ async def generate_video_note(prompt_hint: str = "") -> bytes | None:
                 timeout=30,
             )
             if proc.returncode != 0:
-                logger.error(f"ffmpeg crop error: {proc.stderr[:300]}")
+                logger.error(f"ffmpeg crop error: {proc.stderr[-500:]}")
                 return None
 
             import os
