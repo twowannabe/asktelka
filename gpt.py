@@ -418,30 +418,59 @@ async def generate_video_note(prompt_hint: str = "") -> bytes | None:
                 logger.error("SVD prediction timed out")
                 return None
 
-        # Step 5: ffmpeg — crop to square and re-encode
-        # MP4 needs seekable input and output, so use tempfiles for both
+        # Step 5a: generate whisper audio for the video note
+        VIDEO_NOTE_WHISPERS = [
+            "мм, смотри...", "это для тебя...", "нравится?", "скучала...",
+            "иди сюда...", "только для тебя...", "ммм...", "хочешь ещё?",
+            "думаю о тебе...", "смотри какая я...",
+        ]
+        audio_bytes = None
+        try:
+            audio_bytes = await text_to_voice(
+                random.choice(VIDEO_NOTE_WHISPERS), style="moan",
+            )
+        except Exception as e:
+            logger.warning(f"Video note audio generation failed: {e}")
+
+        # Step 5b: ffmpeg — crop to square, re-encode, merge audio
         import os
         in_tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
         out_tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
         in_path, out_path = in_tmp.name, out_tmp.name
         in_tmp.close()
         out_tmp.close()
+        audio_path = None
 
         try:
             with open(in_path, "wb") as f:
                 f.write(mp4_input)
 
-            proc = subprocess.run(
-                [
+            if audio_bytes:
+                audio_tmp = tempfile.NamedTemporaryFile(suffix=".ogg", delete=False)
+                audio_path = audio_tmp.name
+                audio_tmp.close()
+                with open(audio_path, "wb") as f:
+                    f.write(audio_bytes)
+
+                cmd = [
+                    "ffmpeg", "-y", "-i", in_path, "-i", audio_path,
+                    "-vf", "crop='min(iw,ih)':'min(iw,ih)',scale=512:512",
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                    "-c:a", "aac", "-b:a", "64k",
+                    "-shortest",
+                    "-movflags", "+faststart",
+                    "-f", "mp4", out_path,
+                ]
+            else:
+                cmd = [
                     "ffmpeg", "-y", "-i", in_path,
                     "-vf", "crop='min(iw,ih)':'min(iw,ih)',scale=512:512",
                     "-c:v", "libx264", "-pix_fmt", "yuv420p",
                     "-movflags", "+faststart",
                     "-an", "-f", "mp4", out_path,
-                ],
-                capture_output=True,
-                timeout=30,
-            )
+                ]
+
+            proc = subprocess.run(cmd, capture_output=True, timeout=30)
             if proc.returncode != 0:
                 logger.error(f"ffmpeg crop error: {proc.stderr[-500:]}")
                 return None
@@ -453,7 +482,9 @@ async def generate_video_note(prompt_hint: str = "") -> bytes | None:
             logger.error(f"ffmpeg video note error: {e}", exc_info=True)
             return None
         finally:
-            for p in (in_path, out_path):
+            for p in (in_path, out_path, audio_path):
+                if p is None:
+                    continue
                 try:
                     os.unlink(p)
                 except OSError:
