@@ -86,6 +86,20 @@ VOICE_STYLES = {
 }
 
 
+def get_ogg_duration(data: bytes) -> float:
+    """Estimate OGG Opus duration from raw bytes."""
+    try:
+        import struct
+        # Find last OggS page and read granule position
+        pos = data.rfind(b"OggS")
+        if pos >= 0 and pos + 14 <= len(data):
+            granule = struct.unpack_from("<Q", data, pos + 6)[0]
+            return granule / 48000.0  # Opus uses 48kHz
+    except Exception:
+        pass
+    return 0.0
+
+
 async def text_to_voice(text: str, style: str = "") -> bytes | None:
     if len(text.split()) > MAX_VOICE_WORDS:
         logger.info(f"Voice skipped: reply too long ({len(text.split())} words > {MAX_VOICE_WORDS})")
