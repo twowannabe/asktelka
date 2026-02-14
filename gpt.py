@@ -86,15 +86,39 @@ VOICE_STYLES = {
 }
 
 
+def _reencode_ogg_opus(data: bytes) -> bytes:
+    """Re-encode audio to proper OGG Opus via ffmpeg for Telegram compatibility."""
+    import subprocess
+    try:
+        proc = subprocess.run(
+            [
+                "ffmpeg", "-i", "pipe:0",
+                "-c:a", "libopus", "-b:a", "64k", "-ar", "48000", "-ac", "1",
+                "-application", "voip",
+                "-f", "ogg", "pipe:1",
+            ],
+            input=data,
+            capture_output=True,
+            timeout=15,
+        )
+        if proc.returncode == 0 and proc.stdout:
+            return proc.stdout
+        logger.warning(f"ffmpeg re-encode failed: {proc.stderr[:200]}")
+    except FileNotFoundError:
+        logger.warning("ffmpeg not found, sending original audio")
+    except Exception as e:
+        logger.warning(f"ffmpeg re-encode error: {e}")
+    return data
+
+
 def get_ogg_duration(data: bytes) -> float:
     """Estimate OGG Opus duration from raw bytes."""
     try:
         import struct
-        # Find last OggS page and read granule position
         pos = data.rfind(b"OggS")
         if pos >= 0 and pos + 14 <= len(data):
             granule = struct.unpack_from("<Q", data, pos + 6)[0]
-            return granule / 48000.0  # Opus uses 48kHz
+            return granule / 48000.0
     except Exception:
         pass
     return 0.0
@@ -119,12 +143,12 @@ async def text_to_voice(text: str, style: str = "") -> bytes | None:
                 json={
                     "text": text,
                     "model_id": "eleven_multilingual_v2",
-                    "output_format": "ogg_opus",
+                    "output_format": "mp3_44100_128",
                     "voice_settings": voice_settings,
                 },
             )
             if resp.status_code == 200:
-                return resp.content
+                return _reencode_ogg_opus(resp.content)
             logger.error(f"ElevenLabs error: {resp.status_code} {resp.text[:200]}")
     except Exception as e:
         logger.error(f"ElevenLabs TTS error: {e}", exc_info=True)
