@@ -15,7 +15,7 @@ from config import (
     LISA_MOODS, LISA_MOOD_TIME_WEIGHTS, LEVEL_PERSONALITIES,
     LEVEL_SELFIE_UNLOCK,
     RITUAL_SELFIE_CHANCE, RITUAL_VOICE_CHANCE,
-    THOUGHT_CHANCE, THOUGHT_ACTIVE_DAYS,
+    THOUGHT_CHANCE, THOUGHT_VOICE_CHANCE, THOUGHT_ACTIVE_DAYS,
     SELFIE_CAPTIONS,
     LONELY_MIN_SILENCE_HOURS, LONELY_CHECKIN_CHANCE,
     STORY_TEMPLATES, STORY_CHECKIN_CHANCE, LEVEL_STORY_UNLOCK,
@@ -97,18 +97,33 @@ async def generate_checkin_text(first_name: str, mood_label: str | None = None,
 
 
 async def send_checkin_voice_or_text(bot, chat_id: int, text: str):
-    now = local_now()
-    folder = VOICE_DIR_MORNING if is_morning(now) else VOICE_DIR_EVENING if is_evening(now) else ""
-    voice_files = list_ogg_files(folder) if folder else []
-
-    if voice_files and random.random() < 0.6:
-        path = random.choice(voice_files)
+    if random.random() < 0.6:
+        # Try dynamic TTS first
         try:
-            with open(path, "rb") as f:
-                await bot.send_voice(chat_id=chat_id, voice=f)
-            return
+            from gpt import text_to_voice, get_ogg_duration
+            import io
+            voice_data = await text_to_voice(text)
+            if voice_data:
+                duration = int(get_ogg_duration(voice_data)) or None
+                voice_file = io.BytesIO(voice_data)
+                voice_file.name = "voice.ogg"
+                await bot.send_voice(chat_id=chat_id, voice=voice_file, duration=duration)
+                return
         except Exception as e:
-            logger.error(f"Failed to send voice {path}: {e}")
+            logger.error(f"Checkin TTS error: {e}")
+
+        # Fallback: pre-recorded .ogg
+        now = local_now()
+        folder = VOICE_DIR_MORNING if is_morning(now) else VOICE_DIR_EVENING if is_evening(now) else ""
+        voice_files = list_ogg_files(folder) if folder else []
+        if voice_files:
+            path = random.choice(voice_files)
+            try:
+                with open(path, "rb") as f:
+                    await bot.send_voice(chat_id=chat_id, voice=f)
+                return
+            except Exception as e:
+                logger.error(f"Failed to send voice {path}: {e}")
 
     await bot.send_message(chat_id=chat_id, text=text)
 
@@ -401,6 +416,22 @@ async def send_lisa_thoughts(context: CallbackContext) -> None:
                 user_level=user_level,
                 lisa_mood_prompt=lisa_mood_data["prompt_mod"],
             )
+
+            # Chance to send thought as voice
+            if random.random() < THOUGHT_VOICE_CHANCE * lisa_mood_data.get("voice_mult", 1.0):
+                try:
+                    from gpt import text_to_voice, get_ogg_duration
+                    import io
+                    voice_data = await text_to_voice(text)
+                    if voice_data:
+                        duration = int(get_ogg_duration(voice_data)) or None
+                        voice_file = io.BytesIO(voice_data)
+                        voice_file.name = "voice.ogg"
+                        await context.bot.send_voice(chat_id=int(chat_id), voice=voice_file, duration=duration)
+                        logger.info(f"Lisa thought voice sent to {user_id}")
+                        continue
+                except Exception as e:
+                    logger.error(f"Thought voice error for {user_id}: {e}", exc_info=True)
 
             await context.bot.send_message(chat_id=int(chat_id), text=f"💭 {text}")
             logger.info(f"Lisa thought sent to {user_id}")
