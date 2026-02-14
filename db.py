@@ -774,6 +774,38 @@ def set_last_thought_date(user_id: int, date_str: str):
         logger.error(f"DB set_last_thought_date error: {e}", exc_info=True)
 
 
+def get_top_users(limit: int = 10) -> list[dict]:
+    """Return top users by XP with their names."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT s.user_id, COALESCE(s.xp, 0) AS xp, COALESCE(s.level, 1) AS level,
+                   COALESCE(s.streak_days, 0) AS streak,
+                   COALESCE(c.first_name, ''), COALESCE(c.username, '')
+            FROM user_state s
+            LEFT JOIN user_last_contact c ON s.user_id = c.user_id
+            WHERE COALESCE(s.xp, 0) > 0
+            ORDER BY xp DESC
+            LIMIT %s
+        """, (limit,))
+        rows = cur.fetchall()
+        cur.close()
+        release_db_connection(conn)
+        result = []
+        for row in rows:
+            lvl, title = get_level_for_xp(row[1])
+            result.append({
+                "user_id": row[0], "xp": row[1], "level": lvl,
+                "streak": row[3], "title": title,
+                "first_name": row[4], "username": row[5],
+            })
+        return result
+    except Exception as e:
+        logger.error(f"DB get_top_users error: {e}", exc_info=True)
+        return []
+
+
 def get_last_contacts() -> list[tuple]:
     try:
         conn = get_db_connection()
