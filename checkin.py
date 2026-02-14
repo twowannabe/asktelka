@@ -20,6 +20,7 @@ from config import (
     LONELY_MIN_SILENCE_HOURS, LONELY_CHECKIN_CHANCE,
     STORY_TEMPLATES, STORY_CHECKIN_CHANCE, LEVEL_STORY_UNLOCK,
     active_games,
+    get_casual_name,
     client, logger,
 )
 from db import (
@@ -176,7 +177,7 @@ async def check_lonely_users(context: CallbackContext) -> None:
                 try:
                     from handlers import _start_story
                     started = await _start_story(
-                        int(user_id), int(chat_id), first_name,
+                        int(user_id), int(chat_id), get_casual_name(first_name),
                         context.bot, checkin_user_level,
                     )
                     if started:
@@ -195,7 +196,7 @@ async def check_lonely_users(context: CallbackContext) -> None:
             else:
                 mood_label = st.get("mood_label")
                 text = await generate_checkin_text(
-                    first_name=first_name, mood_label=mood_label,
+                    first_name=get_casual_name(first_name), mood_label=mood_label,
                     user_id=int(user_id), silence_hours=silence_hours,
                 )
 
@@ -298,7 +299,7 @@ async def send_ritual(context: CallbackContext) -> None:
             lisa_mood_data = LISA_MOODS.get(lisa_mood_key, LISA_MOODS["playful"])
 
             text = await generate_ritual_text(
-                first_name=first_name,
+                first_name=get_casual_name(first_name),
                 ritual_type=ritual_type,
                 mood_label=mood_label,
                 user_id=int(user_id),
@@ -395,7 +396,7 @@ async def send_lisa_thoughts(context: CallbackContext) -> None:
 
             from gpt import generate_lisa_thought
             text = await generate_lisa_thought(
-                user_name=first_name or "",
+                user_name=get_casual_name(first_name) or "",
                 memory=memory,
                 user_level=user_level,
                 lisa_mood_prompt=lisa_mood_data["prompt_mod"],

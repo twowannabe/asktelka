@@ -34,6 +34,7 @@ from config import (
     ACHIEVEMENTS, ACHIEVEMENT_MESSAGES,
     LISA_MOODS,
     disabled_chats, user_personalities, nudes_request_count, active_games,
+    get_casual_name,
     logger,
 )
 from db import (
@@ -315,7 +316,7 @@ async def top_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     for i, u in enumerate(users):
         medal = TOP_MEDALS[i] if i < len(TOP_MEDALS) else f"{i+1}."
-        name = u["first_name"] or (f"@{u['username']}" if u["username"] else f"id{u['user_id']}")
+        name = get_casual_name(u["first_name"]) or (f"@{u['username']}" if u["username"] else f"id{u['user_id']}")
         streak = f" 🔥{u['streak']}" if u["streak"] >= 2 else ""
         marker = " ← это ты!" if u["user_id"] == caller_id else ""
         lines.append(f"{medal} {name} — {u['title']} ({u['xp']} XP){streak}{marker}")
@@ -380,7 +381,7 @@ async def story_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("у тебя уже идёт игра или сюжет 😏 заверши сначала")
         return
 
-    user_name = update.effective_user.first_name or ""
+    user_name = get_casual_name(update.effective_user.first_name or "")
 
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
     await asyncio.sleep(random.uniform(1, 2))
@@ -704,8 +705,8 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if chat.type != "private" and not is_bot_enabled(chat_id):
         return
 
-    user_first_name = user.first_name or user_username or ""
-    await run_sync(update_last_interaction, user_id, chat_id, user_first_name, user_username, chat.type)
+    user_first_name = get_casual_name(user.first_name or user_username or "")
+    await run_sync(update_last_interaction, user_id, chat_id, user.first_name or user_username or "", user_username, chat.type)
     await run_sync(ensure_user_state_row, user_id)
 
     # Achievement: night_owl

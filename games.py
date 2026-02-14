@@ -11,7 +11,7 @@ from telegram.ext import ContextTypes
 from config import (
     XP_PER_TRUTH, XP_PER_GUESS, XP_PER_RIDDLE, XP_PER_QUIZ, XP_PER_STORY,
     STORY_TEMPLATES, LISA_MOODS,
-    active_games, client, logger,
+    active_games, get_casual_name, client, logger,
 )
 from db import add_xp, send_level_up, get_user_level_info, get_lisa_mood
 from utils import lowercase_first
@@ -266,7 +266,7 @@ async def handle_game_response(user_id: int, text: str, update: Update, context:
         game["history"].append({"role": "user", "content": text})
         game["step"] += 1
 
-        user_name = update.effective_user.first_name or ""
+        user_name = get_casual_name(update.effective_user.first_name or "")
         level_info = get_user_level_info(user_id)
         user_level = level_info["level"]
         lisa_mood_key = get_lisa_mood()
