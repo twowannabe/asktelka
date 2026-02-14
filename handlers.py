@@ -466,6 +466,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     should_gpt = False
     text_to_process = ""
     reply_to_message_id = update.message.message_id
+    bot_original_text = ""  # for group reply chains
 
     if chat.type == "private":
         should_gpt = True
@@ -478,6 +479,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     elif is_reply_to_bot:
         should_gpt = True
         text_to_process = text
+        bot_original_text = update.message.reply_to_message.text or update.message.reply_to_message.caption or ""
 
     elif is_reply and is_bot_mentioned:
         original = update.message.reply_to_message.text or update.message.reply_to_message.caption or ""
@@ -555,6 +557,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     memory = get_user_memory(user_id)
     messages = load_context(user_id, limit=10)
+
+    # Inject bot's original message for group reply chains
+    if bot_original_text:
+        messages.append({"role": "assistant", "content": bot_original_text})
+        messages.append({"role": "user", "content": text_to_process})
 
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
     await asyncio.sleep(random.uniform(1, 4))
