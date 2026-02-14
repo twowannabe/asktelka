@@ -232,15 +232,17 @@ async def generate_selfie(prompt_hint: str = "") -> bytes | None:
     if prompt_hint:
         prompt += f" {prompt_hint.strip()}"
     try:
+        model_owner, model_rest = SELFIE_LORA_MODEL.split("/", 1)
+        model_name = model_rest.split(":")[0]
         async with httpx.AsyncClient(timeout=120) as http:
             resp = await http.post(
-                "https://api.replicate.com/v1/predictions",
+                f"https://api.replicate.com/v1/models/{model_owner}/{model_name}/predictions",
                 headers={
                     "Authorization": f"Bearer {REPLICATE_API_TOKEN}",
                     "Content-Type": "application/json",
+                    "Prefer": "wait",
                 },
                 json={
-                    "version": SELFIE_LORA_MODEL.split(":")[1],
                     "input": {
                         "prompt": prompt,
                         "num_outputs": 1,
