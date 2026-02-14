@@ -46,7 +46,7 @@ from db import (
     get_user_achievements, grant_achievement,
     get_user_zodiac, set_user_zodiac, get_last_horoscope_date, set_last_horoscope_date,
 )
-from gpt import ask_chatgpt, text_to_voice, transcribe_voice, summarize_memory, generate_chat_comment, generate_jealous_comment, react_to_photo, generate_selfie, generate_horoscope
+from gpt import ask_chatgpt, text_to_voice, get_ogg_duration, transcribe_voice, summarize_memory, generate_chat_comment, generate_jealous_comment, react_to_photo, generate_selfie, generate_horoscope
 from games import handle_game_response
 from utils import (
     escape_markdown_v2, lowercase_first, is_bot_enabled,
@@ -500,10 +500,13 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     voice_data = await text_to_voice(reply) if user_level >= LEVEL_VOICE_UNLOCK else None
     if voice_data:
         try:
+            duration = int(get_ogg_duration(voice_data)) or None
+            voice_file = io.BytesIO(voice_data)
+            voice_file.name = "voice.ogg"
             if chat.type == "private":
-                await context.bot.send_voice(chat_id=chat_id, voice=io.BytesIO(voice_data))
+                await context.bot.send_voice(chat_id=chat_id, voice=voice_file, duration=duration)
             else:
-                await context.bot.send_voice(chat_id=chat_id, voice=io.BytesIO(voice_data), reply_to_message_id=reply_to_message_id)
+                await context.bot.send_voice(chat_id=chat_id, voice=voice_file, duration=duration, reply_to_message_id=reply_to_message_id)
             sent_as_voice = True
         except Exception as e:
             logger.error(f"Voice send error: {e}", exc_info=True)
@@ -776,10 +779,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         voice_data = await text_to_voice(reply, style=voice_style)
         if voice_data:
             try:
+                duration = int(get_ogg_duration(voice_data)) or None
+                voice_file = io.BytesIO(voice_data)
+                voice_file.name = "voice.ogg"
                 if chat.type == "private":
-                    await context.bot.send_voice(chat_id=chat_id, voice=io.BytesIO(voice_data))
+                    await context.bot.send_voice(chat_id=chat_id, voice=voice_file, duration=duration)
                 else:
-                    await context.bot.send_voice(chat_id=chat_id, voice=io.BytesIO(voice_data), reply_to_message_id=reply_to_message_id)
+                    await context.bot.send_voice(chat_id=chat_id, voice=voice_file, duration=duration, reply_to_message_id=reply_to_message_id)
                 sent_as_voice = True
             except Exception as e:
                 logger.error(f"Voice send error: {e}", exc_info=True)
