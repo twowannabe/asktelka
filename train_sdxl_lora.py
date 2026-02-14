@@ -70,6 +70,21 @@ def main():
 
     TRAINING_PARAMS["input_images"] = file_url
 
+    # Create destination model if it doesn't exist
+    owner, model_name = DESTINATION.split("/")
+    try:
+        replicate.models.get(DESTINATION)
+        print(f"Model {DESTINATION} already exists")
+    except Exception:
+        print(f"Creating model {DESTINATION}...")
+        replicate.models.create(
+            owner=owner,
+            name=model_name,
+            visibility="private",
+            hardware="gpu-t4-nano",
+        )
+        print(f"Model created: {DESTINATION}")
+
     print(f"\nStarting SDXL LoRA training → {DESTINATION}")
     print(f"Token: {TRAINING_PARAMS['token_string']}")
     print(f"Steps: {TRAINING_PARAMS['max_train_steps']}")
