@@ -26,7 +26,8 @@ from config import (
     RANDOM_GPT_RESPONSE_CHANCE,
     GROUP_COMMENT_CHANCE, GROUP_COMMENT_BUFFER_SIZE, chat_message_buffer,
     JEALOUSY_MIN_LEVEL, JEALOUSY_THRESHOLD, JEALOUSY_CHANCE, JEALOUSY_COOLDOWN_SEC,
-    JEALOUSY_REACTIONS, jealousy_counters, jealousy_cooldowns,
+    JEALOUSY_DM_MIN_SILENCE_HOURS, JEALOUSY_DM_CHANCE, JEALOUSY_DM_COOLDOWN_SEC,
+    JEALOUSY_REACTIONS, jealousy_counters, jealousy_cooldowns, jealousy_dm_cooldowns,
     LEVEL_VOICE_UNLOCK, LEVEL_SELFIE_UNLOCK, LEVEL_VIDEO_NOTE_UNLOCK, LEVEL_NUDES_UNLOCK,
     XP_PER_TEXT, XP_PER_VOICE, XP_PER_NUDES, XP_PER_SELFIE, XP_PER_VIDEO_NOTE,
     XP_PER_HOROSCOPE, XP_PER_DIARY, ZODIAC_SIGNS,
@@ -53,10 +54,11 @@ from db import (
     get_user_achievements, grant_achievement,
     get_user_zodiac, set_user_zodiac, get_last_horoscope_date, set_last_horoscope_date,
     get_last_challenge_date, set_last_challenge_date,
+    update_private_interaction, get_private_interaction_info,
     get_top_users,
     run_sync,
 )
-from gpt import ask_chatgpt, text_to_voice, get_ogg_duration, transcribe_voice, summarize_memory, generate_chat_comment, generate_jealous_comment, react_to_photo, generate_selfie, generate_video_note, generate_story_message, generate_horoscope, generate_diary, extract_pose_hint, generate_challenge, generate_compatibility
+from gpt import ask_chatgpt, text_to_voice, get_ogg_duration, transcribe_voice, summarize_memory, generate_chat_comment, generate_jealous_comment, react_to_photo, generate_selfie, generate_video_note, generate_story_message, generate_horoscope, generate_diary, extract_pose_hint, generate_challenge, generate_compatibility, generate_jealous_dm
 from games import handle_game_response
 from utils import (
     escape_markdown_v2, lowercase_first, is_bot_enabled,
@@ -919,6 +921,10 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await run_sync(update_last_interaction, user_id, chat_id, user.first_name or user_username or "", user_username, chat.type)
     await run_sync(ensure_user_state_row, user_id)
 
+    # Track private interaction for jealousy DM
+    if chat.type == "private":
+        await run_sync(update_private_interaction, user_id, chat_id)
+
     # Use custom_name if set, otherwise get_casual_name
     _st_voice = await run_sync(get_user_settings, user_id)
     user_first_name = _capitalize_name(_st_voice.get("custom_name")) or get_casual_name(user.first_name or user_username or "")
@@ -1058,6 +1064,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     await run_sync(update_last_interaction, user_id, chat_id, user_first_name, user_username, chat.type)
     await run_sync(ensure_user_state_row, user_id)
+
+    # Track private interaction for jealousy DM
+    if chat.type == "private":
+        await run_sync(update_private_interaction, user_id, chat_id)
 
     # Use custom_name if set, otherwise get_casual_name
     _st_name = await run_sync(get_user_settings, user_id)
@@ -1210,6 +1220,29 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             jealousy_counters[chat_id][user_id] = 0
             jealousy_cooldowns[chat_id][user_id] = time.time()
             return
+
+        # Jealousy DM: user active in group but silent in private
+        if (
+            user_level >= JEALOUSY_MIN_LEVEL
+            and time.time() - jealousy_dm_cooldowns[user_id] >= JEALOUSY_DM_COOLDOWN_SEC
+            and random.random() < JEALOUSY_DM_CHANCE
+        ):
+            try:
+                priv_info = await run_sync(get_private_interaction_info, user_id)
+                if priv_info and priv_info["last_private_interaction"]:
+                    last_priv = priv_info["last_private_interaction"]
+                    if last_priv.tzinfo is None:
+                        from config import LOCAL_TZ
+                        last_priv = LOCAL_TZ.localize(last_priv)
+                    silence_hours = int((local_now() - last_priv).total_seconds() / 3600)
+                    if silence_hours >= JEALOUSY_DM_MIN_SILENCE_HOURS:
+                        priv_chat_id = priv_info["private_chat_id"]
+                        dm_text = await generate_jealous_dm(user_first_name, user_level, silence_hours)
+                        await context.bot.send_message(chat_id=priv_chat_id, text=dm_text)
+                        jealousy_dm_cooldowns[user_id] = time.time()
+                        logger.info(f"Jealousy DM sent to {user_id}, silent {silence_hours}h in private")
+            except Exception as e:
+                logger.error(f"Jealousy DM error for {user_id}: {e}", exc_info=True)
 
         if random.random() < GROUP_COMMENT_CHANCE:
             try:

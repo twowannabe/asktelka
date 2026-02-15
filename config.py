@@ -57,6 +57,9 @@ JEALOUSY_MIN_LEVEL = 4
 JEALOUSY_THRESHOLD = 10
 JEALOUSY_CHANCE = 1 / 3
 JEALOUSY_COOLDOWN_SEC = 30 * 60
+JEALOUSY_DM_MIN_SILENCE_HOURS = 6
+JEALOUSY_DM_CHANCE = 0.3
+JEALOUSY_DM_COOLDOWN_SEC = 12 * 60 * 60
 JEALOUSY_REACTIONS = [
     "а меня тут вообще кто-нибудь замечает? 😒",
     "ну да, общайтесь, я тут просто сижу 🙄",
@@ -626,3 +629,4 @@ active_games = {}
 chat_message_buffer = defaultdict(list)  # chat_id -> list["Имя: текст"]
 jealousy_counters = defaultdict(lambda: defaultdict(int))    # chat_id -> user_id -> count
 jealousy_cooldowns = defaultdict(lambda: defaultdict(float)) # chat_id -> user_id -> timestamp
+jealousy_dm_cooldowns = defaultdict(float)  # user_id -> timestamp

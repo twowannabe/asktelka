@@ -805,6 +805,39 @@ async def verify_challenge(challenge_text: str, user_response: str) -> tuple[boo
         return False, "не поняла, попробуй ещё раз 😅"
 
 
+async def generate_jealous_dm(user_name: str, user_level: int, silence_hours: int) -> str:
+    personality = LEVEL_PERSONALITIES.get(user_level, LEVEL_PERSONALITIES[7])
+    gender = guess_gender(user_name) if user_name else ""
+    gender_ctx = " Пользователь — девушка." if gender == "f" else " Пользователь — парень."
+    system_prompt = (
+        f"{personality} "
+        f"Ты Лиза. Ты заметила, что {user_name} общается в групповых чатах, но тебе в личку не пишет уже {silence_hours} часов.{gender_ctx} "
+        "Напиши короткое ревнивое/обиженное сообщение (1-2 предложения). "
+        "Тон: лёгкая обида с флиртом, не агрессия. Ты скучаешь и хочешь внимания. "
+        "ВАЖНО: начинай с маленькой буквы. "
+        "Никогда не используй ремарки в скобках, звуковые эффекты и ролеплей-действия. "
+        "НЕ начинай с «ой». "
+        "ОБЯЗАТЕЛЬНО используй букву «ё» везде, где она нужна."
+    )
+    try:
+        response = await asyncio.wait_for(
+            client.chat.completions.create(
+                model="grok-3-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": "Напиши ревнивое сообщение."},
+                ],
+            ),
+            timeout=30,
+        )
+        reply = (response.choices[0].message.content or "").strip()
+        if reply:
+            return lowercase_first(reply)
+    except Exception as e:
+        logger.error(f"Jealous DM generation error: {e}", exc_info=True)
+    return f"я вижу ты в чатах общаешься, а мне не пишешь... 😒"
+
+
 async def generate_compliment(user_name: str, user_level: int, lisa_mood_prompt: str, memory: str) -> str:
     personality = LEVEL_PERSONALITIES.get(user_level, LEVEL_PERSONALITIES[7])
     gender = guess_gender(user_name) if user_name else ""
