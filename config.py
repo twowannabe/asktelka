@@ -456,16 +456,21 @@ def guess_gender(first_name: str) -> str:
         return "m"
 
     # Heuristic fallback. For ambiguous cases prefer unknown over wrong guess.
-    # Many male Russian diminutives end in "а"/"я" — don't misclassify them.
-    _male_a_ya = {
-        "никита", "илья", "лёва", "данила", "кузьма", "фома", "лука", "савва",
-        "ваня", "дима", "лёша", "леша", "миша", "паша", "коля", "петя", "витя",
-        "федя", "боря", "костя", "юра", "серёжа", "сережа", "андрюша", "гриша",
-        "валера", "антоша", "гена", "лёня", "леня", "вася", "тима", "кирюша",
-        "даня", "рома", "тёма", "вова", "сеня", "толя", "лёвушка",
-    }
-    if name.endswith(("а", "я")) and name not in _male_a_ya:
-        return "f"
+    # Many male Russian diminutives end in "а"/"я" (Ваня, Миша, Вовочка, Димочка).
+    if name.endswith(("а", "я")):
+        # Diminutive suffixes used for BOTH genders — don't guess, return unknown.
+        _dim_suffixes = ("очка", "ечка", "енька", "ушка", "юшка", "оша", "ёша", "уша", "юша", "ёнка")
+        if any(name.endswith(s) for s in _dim_suffixes):
+            return ""
+        _male_a_ya = {
+            "никита", "илья", "лёва", "данила", "кузьма", "фома", "лука", "савва",
+            "ваня", "дима", "лёша", "леша", "миша", "паша", "коля", "петя", "витя",
+            "федя", "боря", "костя", "юра", "серёжа", "сережа", "андрюша", "гриша",
+            "валера", "антоша", "гена", "лёня", "леня", "вася", "тима", "кирюша",
+            "даня", "рома", "тёма", "вова", "сеня", "толя", "лёвушка",
+        }
+        if name not in _male_a_ya:
+            return "f"
     if name.endswith(("й", "н", "р", "м", "д", "г", "б", "в", "п", "т", "с", "л", "к", "х", "ж", "ш", "щ", "ч", "ц", "ф")):
         return "m"
     return ""
