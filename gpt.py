@@ -21,6 +21,14 @@ from utils import lowercase_first
 WHISPER_CHANCE = 1 / 6
 
 
+def _gender_instruction(gender: str) -> str:
+    if gender == "f":
+        return " Пользователь — девушка, используй женский род."
+    if gender == "m":
+        return " Пользователь — парень, используй мужской род."
+    return " Пол пользователя не определён: избегай гендерных прилагательных и обращений."
+
+
 async def generate_chat_comment(buffer: list[str]) -> str:
     system_prompt = (
         "Ты Лиза — дерзкая, пошлая, развратная девушка. "
@@ -592,7 +600,7 @@ async def generate_story_message(
         )
 
     gender = guess_gender(user_name) if user_name else ""
-    gender_ctx = " Пользователь — девушка, используй женский род." if gender == "f" else " Пользователь — парень, используй мужской род."
+    gender_ctx = _gender_instruction(gender)
     name_ctx = (f" Пользователя зовут {user_name}.{gender_ctx}" if user_name else "")
     system_prompt = (
         f"{personality} "
@@ -656,9 +664,18 @@ async def generate_horoscope(sign: str, user_level: int) -> str:
 async def generate_diary(user_name: str, memory: str, user_level: int, stats: dict, lisa_mood_prompt: str) -> str:
     personality = LEVEL_PERSONALITIES.get(user_level, LEVEL_PERSONALITIES[7])
     gender = guess_gender(user_name) if user_name else ""
-    gender_ctx = " Это девушка." if gender == "f" else " Это парень."
-    pronoun = "ней" if gender == "f" else "нём"
-    pronoun2 = "неё" if gender == "f" else "него"
+    if gender == "f":
+        gender_ctx = " Это девушка."
+        pronoun = "ней"
+        pronoun2 = "неё"
+    elif gender == "m":
+        gender_ctx = " Это парень."
+        pronoun = "нём"
+        pronoun2 = "него"
+    else:
+        gender_ctx = " Пол пользователя не определён."
+        pronoun = "пользователе"
+        pronoun2 = "пользователя"
     system_prompt = (
         f"{personality} "
         f"Ты Лиза. Напиши запись в свой личный дневник о {user_name}.{gender_ctx} "
@@ -706,7 +723,7 @@ async def generate_lisa_thought(user_name: str, memory: str, user_level: int, li
         "ОБЯЗАТЕЛЬНО используй букву «ё» везде, где она нужна."
     )
     gender = guess_gender(user_name) if user_name else ""
-    pronoun = "ней" if gender == "f" else "нём"
+    pronoun = "ней" if gender == "f" else ("нём" if gender == "m" else "пользователе")
     user_prompt = (
         f"Напиши короткую спонтанную мысль для {user_name}.\n"
         f"Память о {pronoun}: {memory or 'пока мало знаю'}\n"
@@ -735,7 +752,7 @@ async def generate_lisa_thought(user_name: str, memory: str, user_level: int, li
 async def generate_challenge(user_name: str, user_level: int, lisa_mood_prompt: str, memory: str) -> str:
     personality = LEVEL_PERSONALITIES.get(user_level, LEVEL_PERSONALITIES[7])
     gender = guess_gender(user_name) if user_name else ""
-    gender_ctx = " Пользователь — девушка, используй женский род." if gender == "f" else " Пользователь — парень, используй мужской род."
+    gender_ctx = _gender_instruction(gender)
     name_ctx = (f" Пользователя зовут {user_name}.{gender_ctx}" if user_name else "")
     memory_ctx = f" Память о пользователе: {memory}" if memory else ""
     system_prompt = (
@@ -808,7 +825,12 @@ async def verify_challenge(challenge_text: str, user_response: str) -> tuple[boo
 async def generate_jealous_dm(user_name: str, user_level: int, silence_hours: int) -> str:
     personality = LEVEL_PERSONALITIES.get(user_level, LEVEL_PERSONALITIES[7])
     gender = guess_gender(user_name) if user_name else ""
-    gender_ctx = " Пользователь — девушка." if gender == "f" else " Пользователь — парень."
+    if gender == "f":
+        gender_ctx = " Пользователь — девушка."
+    elif gender == "m":
+        gender_ctx = " Пользователь — парень."
+    else:
+        gender_ctx = " Пол пользователя не определён."
     system_prompt = (
         f"{personality} "
         f"Ты Лиза. Ты заметила, что {user_name} общается в групповых чатах, но тебе в личку не пишет уже {silence_hours} часов.{gender_ctx} "
@@ -841,7 +863,7 @@ async def generate_jealous_dm(user_name: str, user_level: int, silence_hours: in
 async def generate_compliment(user_name: str, user_level: int, lisa_mood_prompt: str, memory: str) -> str:
     personality = LEVEL_PERSONALITIES.get(user_level, LEVEL_PERSONALITIES[7])
     gender = guess_gender(user_name) if user_name else ""
-    gender_ctx = " Пользователь — девушка, используй женский род." if gender == "f" else " Пользователь — парень, используй мужской род."
+    gender_ctx = _gender_instruction(gender)
     name_ctx = (f" Пользователя зовут {user_name}.{gender_ctx}" if user_name else "")
     memory_ctx = f" Память о пользователе: {memory}" if memory else ""
     system_prompt = (
@@ -871,13 +893,22 @@ async def generate_compliment(user_name: str, user_level: int, lisa_mood_prompt:
             return lowercase_first(reply)
     except Exception as e:
         logger.error(f"Compliment generation error: {e}", exc_info=True)
-    return "ты сегодня особенно хорош 💛" if gender != "f" else "ты сегодня особенно хороша 💛"
+    if gender == "f":
+        return "ты сегодня особенно хороша 💛"
+    if gender == "m":
+        return "ты сегодня особенно хорош 💛"
+    return "ты сегодня особенно классный человек 💛"
 
 
 async def generate_compatibility(user_sign: str, user_name: str, user_level: int) -> str:
     personality = LEVEL_PERSONALITIES.get(user_level, LEVEL_PERSONALITIES[7])
     gender = guess_gender(user_name) if user_name else ""
-    gender_ctx = " Пользователь — девушка." if gender == "f" else " Пользователь — парень."
+    if gender == "f":
+        gender_ctx = " Пользователь — девушка."
+    elif gender == "m":
+        gender_ctx = " Пользователь — парень."
+    else:
+        gender_ctx = " Пол пользователя не определён."
     system_prompt = (
         f"{personality} "
         "Ты Лиза, знак зодиака — Скорпион ♏. "
@@ -914,9 +945,15 @@ async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood
         if gender == "f":
             gender_ctx = " Пользователь — девушка. Используй женский род (красивая, милая, умная и т.д.)."
             pet_names = "малышка, солнышко, зая, красотка"
-        else:
+        elif gender == "m":
             gender_ctx = " Пользователь — парень. Используй мужской род (красивый, милый, умный и т.д.)."
             pet_names = "малыш, солнышко, зай, красавчик"
+        else:
+            gender_ctx = (
+                " Пол пользователя не определён. Избегай гендерных прилагательных "
+                "(не используй слова в роде вроде 'красивый/красивая')."
+            )
+            pet_names = "солнышко, радость, чудо"
         if user_name and user_level >= 3:
             name_part = (
                 f" Пользователя зовут {user_name}.{gender_ctx} "

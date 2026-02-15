@@ -2,6 +2,7 @@
 
 import os
 import logging
+import re
 from collections import defaultdict
 
 from decouple import config
@@ -393,6 +394,29 @@ FEMALE_NAMES = {
     "миланка", "алиска", "евочка", "аринка", "василиска",
 }
 
+MALE_NAMES = {
+    "александр", "дмитрий", "максим", "сергей", "андрей", "алексей", "артём", "артем",
+    "илья", "кирилл", "михаил", "никита", "матвей", "роман", "егор", "арсений", "иван",
+    "денис", "евгений", "тимофей", "владислав", "игорь", "владимир", "павел", "руслан",
+    "марк", "константин", "тимур", "олег", "ярослав", "антон", "николай", "глеб",
+    "данил", "даниил", "данила", "степан", "фёдор", "федор", "савелий", "борис",
+    "виктор", "вадим", "вячеслав", "лев", "лёва", "семён", "семен", "юрий", "анатолий",
+    "валерий", "геннадий", "григорий", "пётр", "петр", "захар", "платон", "ростислав",
+    "святослав", "станислав", "кузьма", "никон", "адам", "давид", "марат", "рамиль",
+    "альберт", "карим", "камиль", "эмиль", "роберт", "эдуард", "эрик", "ян",
+    # diminutives
+    "саша", "дима", "макс", "серёжа", "сережа", "андрюша", "лёша", "леша", "артёмка",
+    "артемка", "ильюша", "миша", "никитка", "матвейка", "ромка", "женя", "тима",
+    "влад", "игорёк", "игорек", "паша", "руся", "марк", "костя", "олежка", "ярик",
+    "антон", "коля", "глеб", "стёпа", "степа", "федя", "боря", "витя", "вадик", "слава",
+    "лёва", "лева", "сёма", "сема", "юра", "толик", "петя", "захар", "платон", "стас",
+}
+
+AMBIGUOUS_NAMES = {
+    # forms used by both genders, do not force gender
+    "саша", "женя", "валя", "слава", "шура",
+}
+
 
 def _capitalize_name(name: str) -> str:
     """Ensure first letter is uppercase (works for Cyrillic too)."""
@@ -413,15 +437,26 @@ def guess_gender(first_name: str) -> str:
     """Guess gender from first name. Returns 'f', 'm', or '' (unknown)."""
     if not first_name:
         return ""
-    name = first_name.lower().strip()
+
+    # Keep only first token and letters to avoid usernames/emojis/noise.
+    token = first_name.lower().strip().split()[0]
+    name = re.sub(r"[^a-zа-яё-]", "", token)
+    if not name:
+        return ""
+
+    if name in AMBIGUOUS_NAMES:
+        return ""
     if name in FEMALE_NAMES:
         return "f"
-    if name in NICKNAME_MAP and name not in FEMALE_NAMES:
+    if name in MALE_NAMES:
         return "m"
-    # heuristic: Russian female names typically end in -а, -я
-    if name.endswith(("а", "я")) and name not in ("никита", "илья", "лёва", "данила", "кузьма"):
+
+    # Heuristic fallback. For ambiguous cases prefer unknown over wrong guess.
+    if name.endswith(("а", "я")) and name not in {"никита", "илья", "лёва", "данила", "кузьма"}:
         return "f"
-    return "m"
+    if name.endswith(("й", "н", "р", "м", "д", "г", "б", "в", "п", "т", "с", "л", "к", "х", "ж", "ш", "щ", "ч", "ц", "ф")):
+        return "m"
+    return ""
 
 
 # ---------------------- LISA MOOD ----------------------

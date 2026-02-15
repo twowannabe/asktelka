@@ -61,19 +61,18 @@ async def generate_checkin_text(first_name: str, mood_label: str | None = None,
     gender = guess_gender(first_name) if first_name else ""
     if gender == "f":
         gender_ctx = " Пользователь — девушка, используй женский род."
-        pronoun = "Она"
-    else:
+        silence_ctx = " Пользователь не писала несколько часов." if silence_hours < 12 else (
+            " Пользователь не писала со вчера." if silence_hours < 48 else f" Пользователь не писала уже {silence_hours // 24} дней."
+        )
+    elif gender == "m":
         gender_ctx = " Пользователь — парень, используй мужской род."
-        pronoun = "Он"
-    name_ctx = f" Пользователя зовут {first_name}. Обращайся по имени.{gender_ctx}" if first_name else ""
-
-    if silence_hours < 12:
-        silence_ctx = f" {pronoun} не писал(а) несколько часов."
-    elif silence_hours < 48:
-        silence_ctx = f" {pronoun} не писал(а) со вчера."
+        silence_ctx = " Пользователь не писал несколько часов." if silence_hours < 12 else (
+            " Пользователь не писал со вчера." if silence_hours < 48 else f" Пользователь не писал уже {silence_hours // 24} дней."
+        )
     else:
-        days = silence_hours // 24
-        silence_ctx = f" {pronoun} не писал(а) уже {days} дней."
+        gender_ctx = " Пол пользователя не определён: избегай гендерных слов."
+        silence_ctx = " Пользователь давно не писал(а) в этот чат."
+    name_ctx = f" Пользователя зовут {first_name}. Обращайся по имени.{gender_ctx}" if first_name else ""
 
     prompt = (
         f"Ты Лиза — тёплая, заботливая девушка с лёгким флиртом. "
@@ -258,7 +257,12 @@ async def generate_ritual_text(first_name: str, ritual_type: str, mood_label: st
 
     mood_ctx = f" Настроение пользователя: {mood_label}." if mood_label else ""
     gender = guess_gender(first_name) if first_name else ""
-    gender_ctx = " Пользователь — девушка, используй женский род." if gender == "f" else " Пользователь — парень, используй мужской род."
+    if gender == "f":
+        gender_ctx = " Пользователь — девушка, используй женский род."
+    elif gender == "m":
+        gender_ctx = " Пользователь — парень, используй мужской род."
+    else:
+        gender_ctx = " Пол пользователя не определён: избегай гендерных слов."
     name_ctx = (f" Пользователя зовут {first_name}.{gender_ctx}" if first_name else "")
 
     prompt = (
