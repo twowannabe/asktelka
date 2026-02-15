@@ -67,13 +67,47 @@ from utils import (
 )
 
 
+async def _keep_typing(bot, chat_id: int, task: asyncio.Task) -> None:
+    """Re-send TYPING action every 4s while an async task (e.g. GPT call) is running."""
+    try:
+        while not task.done():
+            await bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+            await asyncio.sleep(4)
+    except asyncio.CancelledError:
+        pass
+    except Exception:
+        pass
+
+
+async def _typing_hesitation(bot, chat_id: int, text: str) -> None:
+    """Simulate typing with occasional hesitations: type... pause... type again."""
+    delay = typing_delay(text)
+    # Short messages — just type normally
+    if delay < 2.0:
+        await bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+        await asyncio.sleep(delay)
+        return
+
+    # Longer messages — sometimes hesitate (30% chance)
+    if random.random() < 0.3:
+        await bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+        await asyncio.sleep(delay * 0.4)
+        # "Stop typing" — just wait without sending typing action
+        await asyncio.sleep(random.uniform(0.8, 1.5))
+        # Resume typing
+        await bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+        await asyncio.sleep(delay * 0.4)
+    else:
+        await bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+        await asyncio.sleep(delay)
+
+
 async def _send_reply(bot, chat_id: int, text: str, reply_to_message_id: int | None = None, is_private: bool = False) -> None:
     """Send text as 1-3 messages with adaptive typing delays for natural feel."""
     parts = split_message(text)
 
     for i, part in enumerate(parts):
-        await bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
-        await asyncio.sleep(typing_delay(part))
+        await _typing_hesitation(bot, chat_id, part)
         rid = reply_to_message_id if i == 0 and not is_private else None
         if rid:
             await bot.send_message(chat_id=chat_id, text=part, reply_to_message_id=rid)
@@ -1001,9 +1035,8 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     else:
         messages = await run_sync(load_context, user_id, 10)
 
-    await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
-
-    reply = await ask_chatgpt(
+    # Keep typing indicator alive while GPT generates a response
+    gpt_task = asyncio.create_task(ask_chatgpt(
         messages,
         user_name=user_first_name,
         personality=personality,
@@ -1012,7 +1045,10 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         memory=memory,
         user_level=user_level,
         is_group=is_group,
-    )
+    ))
+    typing_task = asyncio.create_task(_keep_typing(context.bot, chat_id, gpt_task))
+    reply = await gpt_task
+    typing_task.cancel()
 
     if not reply.strip():
         reply = "ммм… напиши ещё 😅"
@@ -1333,9 +1369,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     else:
         messages = await run_sync(load_context, user_id, 10)
 
-    await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
-
-    reply = await ask_chatgpt(
+    # Keep typing indicator alive while GPT generates a response
+    gpt_task = asyncio.create_task(ask_chatgpt(
         messages,
         user_name=user_first_name,
         personality=personality,
@@ -1344,7 +1379,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         memory=memory,
         user_level=user_level,
         is_group=is_group,
-    )
+    ))
+    typing_task = asyncio.create_task(_keep_typing(context.bot, chat_id, gpt_task))
+    reply = await gpt_task
+    typing_task.cancel()
 
     if not reply.strip():
         reply = "ммм… напиши ещё 😅"
