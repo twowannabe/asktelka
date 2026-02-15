@@ -170,8 +170,13 @@ def init_db():
         cur.execute("ALTER TABLE user_state ADD COLUMN IF NOT EXISTS last_ritual_date TEXT")
         cur.execute("ALTER TABLE user_state ADD COLUMN IF NOT EXISTS last_thought_date TEXT")
 
-        # Challenge migration
+        # Jealousy DM migrations
+        cur.execute("ALTER TABLE user_state ADD COLUMN IF NOT EXISTS private_chat_id BIGINT")
+        cur.execute("ALTER TABLE user_state ADD COLUMN IF NOT EXISTS last_private_interaction TIMESTAMP")
+
+        # Challenge & compliment migrations
         cur.execute("ALTER TABLE user_state ADD COLUMN IF NOT EXISTS last_challenge_date TEXT")
+        cur.execute("ALTER TABLE user_state ADD COLUMN IF NOT EXISTS last_compliment_date TEXT")
 
         # Profile settings migrations
         cur.execute("ALTER TABLE user_state ADD COLUMN IF NOT EXISTS custom_name TEXT DEFAULT ''")
@@ -812,6 +817,70 @@ def set_last_challenge_date(user_id: int, date_str: str):
         release_db_connection(conn)
     except Exception as e:
         logger.error(f"DB set_last_challenge_date error: {e}", exc_info=True)
+
+
+def update_private_interaction(user_id: int, chat_id: int):
+    ensure_user_state_row(user_id)
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE user_state SET private_chat_id=%s, last_private_interaction=NOW() WHERE user_id=%s",
+            (chat_id, user_id),
+        )
+        conn.commit()
+        cur.close()
+        release_db_connection(conn)
+    except Exception as e:
+        logger.error(f"DB update_private_interaction error: {e}", exc_info=True)
+
+
+def get_private_interaction_info(user_id: int) -> dict | None:
+    ensure_user_state_row(user_id)
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT private_chat_id, last_private_interaction FROM user_state WHERE user_id=%s",
+            (user_id,),
+        )
+        row = cur.fetchone()
+        cur.close()
+        release_db_connection(conn)
+        if row and row[0]:
+            return {"private_chat_id": int(row[0]), "last_private_interaction": row[1]}
+        return None
+    except Exception as e:
+        logger.error(f"DB get_private_interaction_info error: {e}", exc_info=True)
+        return None
+
+
+def get_last_compliment_date(user_id: int) -> str | None:
+    ensure_user_state_row(user_id)
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT last_compliment_date FROM user_state WHERE user_id=%s", (user_id,))
+        row = cur.fetchone()
+        cur.close()
+        release_db_connection(conn)
+        return row[0] if row else None
+    except Exception as e:
+        logger.error(f"DB get_last_compliment_date error: {e}", exc_info=True)
+        return None
+
+
+def set_last_compliment_date(user_id: int, date_str: str):
+    ensure_user_state_row(user_id)
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("UPDATE user_state SET last_compliment_date=%s WHERE user_id=%s", (date_str, user_id))
+        conn.commit()
+        cur.close()
+        release_db_connection(conn)
+    except Exception as e:
+        logger.error(f"DB set_last_compliment_date error: {e}", exc_info=True)
 
 
 def get_top_users(limit: int = 10) -> list[dict]:

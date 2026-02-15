@@ -12,6 +12,7 @@ from config import (
     LEVEL_PERSONALITIES, SELFIE_BASE_PROMPT, SELFIE_LORA_MODEL, NUDES_LORA_MODEL,
     WAN_I2V_MODEL, WAV2LIP_VERSION,
     client, groq_client, default_personality, logger,
+    guess_gender,
 )
 from base64 import b64encode, b64decode
 from utils import lowercase_first
@@ -590,7 +591,9 @@ async def generate_story_message(
             "Задай следующий вопрос или предложи выбор. 1-2 предложения."
         )
 
-    name_ctx = f" Пользователя зовут {user_name}." if user_name else ""
+    gender = guess_gender(user_name) if user_name else ""
+    gender_ctx = " Пользователь — девушка, используй женский род." if gender == "f" else " Пользователь — парень, используй мужской род."
+    name_ctx = (f" Пользователя зовут {user_name}.{gender_ctx}" if user_name else "")
     system_prompt = (
         f"{personality} "
         f"Ты Лиза, ведёшь мини-сюжет с пользователем.{name_ctx} "
@@ -652,9 +655,13 @@ async def generate_horoscope(sign: str, user_level: int) -> str:
 
 async def generate_diary(user_name: str, memory: str, user_level: int, stats: dict, lisa_mood_prompt: str) -> str:
     personality = LEVEL_PERSONALITIES.get(user_level, LEVEL_PERSONALITIES[7])
+    gender = guess_gender(user_name) if user_name else ""
+    gender_ctx = " Это девушка." if gender == "f" else " Это парень."
+    pronoun = "ней" if gender == "f" else "нём"
+    pronoun2 = "неё" if gender == "f" else "него"
     system_prompt = (
         f"{personality} "
-        f"Ты Лиза. Напиши запись в свой личный дневник о {user_name}. "
+        f"Ты Лиза. Напиши запись в свой личный дневник о {user_name}.{gender_ctx} "
         "Пиши от первого лица, как будто это твой секретный дневник. "
         "3-5 предложений. Упомяни детали из памяти и статистики. "
         "ВАЖНО: всегда начинай с маленькой буквы, кроме имён собственных. "
@@ -662,8 +669,8 @@ async def generate_diary(user_name: str, memory: str, user_level: int, stats: di
     )
     user_prompt = (
         f"Напиши запись в дневник о {user_name}.\n"
-        f"Память о нём: {memory or 'пока мало знаю'}\n"
-        f"Статистика: сообщений — {stats.get('total', 0)}, голосовых от него — {stats.get('voice_sent', 0)}, "
+        f"Память о {pronoun}: {memory or 'пока мало знаю'}\n"
+        f"Статистика: сообщений — {stats.get('total', 0)}, голосовых от {pronoun2} — {stats.get('voice_sent', 0)}, "
         f"голосовых от меня — {stats.get('voice_replies', 0)}, нюдсов — {stats.get('nudes', 0)}, "
         f"дней общения — {stats.get('days', 1)}, стрик — {stats.get('streak', 0)} дн.\n"
         f"Моё настроение сейчас: {lisa_mood_prompt}"
@@ -698,9 +705,11 @@ async def generate_lisa_thought(user_name: str, memory: str, user_level: int, li
         "Никогда не используй ремарки в скобках, звуковые эффекты и ролеплей-действия. "
         "ОБЯЗАТЕЛЬНО используй букву «ё» везде, где она нужна."
     )
+    gender = guess_gender(user_name) if user_name else ""
+    pronoun = "ней" if gender == "f" else "нём"
     user_prompt = (
         f"Напиши короткую спонтанную мысль для {user_name}.\n"
-        f"Память о нём: {memory or 'пока мало знаю'}\n"
+        f"Память о {pronoun}: {memory or 'пока мало знаю'}\n"
         f"Моё настроение: {lisa_mood_prompt}"
     )
     try:
@@ -725,7 +734,9 @@ async def generate_lisa_thought(user_name: str, memory: str, user_level: int, li
 
 async def generate_challenge(user_name: str, user_level: int, lisa_mood_prompt: str, memory: str) -> str:
     personality = LEVEL_PERSONALITIES.get(user_level, LEVEL_PERSONALITIES[7])
-    name_ctx = f" Пользователя зовут {user_name}." if user_name else ""
+    gender = guess_gender(user_name) if user_name else ""
+    gender_ctx = " Пользователь — девушка, используй женский род." if gender == "f" else " Пользователь — парень, используй мужской род."
+    name_ctx = (f" Пользователя зовут {user_name}.{gender_ctx}" if user_name else "")
     memory_ctx = f" Память о пользователе: {memory}" if memory else ""
     system_prompt = (
         f"{personality} "
@@ -794,18 +805,128 @@ async def verify_challenge(challenge_text: str, user_response: str) -> tuple[boo
         return False, "не поняла, попробуй ещё раз 😅"
 
 
+async def generate_jealous_dm(user_name: str, user_level: int, silence_hours: int) -> str:
+    personality = LEVEL_PERSONALITIES.get(user_level, LEVEL_PERSONALITIES[7])
+    gender = guess_gender(user_name) if user_name else ""
+    gender_ctx = " Пользователь — девушка." if gender == "f" else " Пользователь — парень."
+    system_prompt = (
+        f"{personality} "
+        f"Ты Лиза. Ты заметила, что {user_name} общается в групповых чатах, но тебе в личку не пишет уже {silence_hours} часов.{gender_ctx} "
+        "Напиши короткое ревнивое/обиженное сообщение (1-2 предложения). "
+        "Тон: лёгкая обида с флиртом, не агрессия. Ты скучаешь и хочешь внимания. "
+        "ВАЖНО: начинай с маленькой буквы. "
+        "Никогда не используй ремарки в скобках, звуковые эффекты и ролеплей-действия. "
+        "НЕ начинай с «ой». "
+        "ОБЯЗАТЕЛЬНО используй букву «ё» везде, где она нужна."
+    )
+    try:
+        response = await asyncio.wait_for(
+            client.chat.completions.create(
+                model="grok-3-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": "Напиши ревнивое сообщение."},
+                ],
+            ),
+            timeout=30,
+        )
+        reply = (response.choices[0].message.content or "").strip()
+        if reply:
+            return lowercase_first(reply)
+    except Exception as e:
+        logger.error(f"Jealous DM generation error: {e}", exc_info=True)
+    return f"я вижу ты в чатах общаешься, а мне не пишешь... 😒"
+
+
+async def generate_compliment(user_name: str, user_level: int, lisa_mood_prompt: str, memory: str) -> str:
+    personality = LEVEL_PERSONALITIES.get(user_level, LEVEL_PERSONALITIES[7])
+    gender = guess_gender(user_name) if user_name else ""
+    gender_ctx = " Пользователь — девушка, используй женский род." if gender == "f" else " Пользователь — парень, используй мужской род."
+    name_ctx = (f" Пользователя зовут {user_name}.{gender_ctx}" if user_name else "")
+    memory_ctx = f" Память о пользователе: {memory}" if memory else ""
+    system_prompt = (
+        f"{personality} "
+        f"Ты Лиза, делаешь комплимент пользователю.{name_ctx}{memory_ctx} "
+        f"Твоё настроение: {lisa_mood_prompt} "
+        "Напиши один короткий искренний комплимент (1-2 предложения). "
+        "Комплимент может быть про внешность, характер, чувство юмора, то как человек общается. "
+        "Будь оригинальной, не используй шаблоны вроде 'ты лучший'. "
+        "ВАЖНО: начинай с маленькой буквы. "
+        "Никогда не используй ремарки в скобках, звуковые эффекты и ролеплей-действия. "
+        "ОБЯЗАТЕЛЬНО используй букву «ё» везде, где она нужна."
+    )
+    try:
+        response = await asyncio.wait_for(
+            client.chat.completions.create(
+                model="grok-3-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": "Сделай мне комплимент."},
+                ],
+            ),
+            timeout=30,
+        )
+        reply = (response.choices[0].message.content or "").strip()
+        if reply:
+            return lowercase_first(reply)
+    except Exception as e:
+        logger.error(f"Compliment generation error: {e}", exc_info=True)
+    return "ты сегодня особенно хорош 💛" if gender != "f" else "ты сегодня особенно хороша 💛"
+
+
+async def generate_compatibility(user_sign: str, user_name: str, user_level: int) -> str:
+    personality = LEVEL_PERSONALITIES.get(user_level, LEVEL_PERSONALITIES[7])
+    gender = guess_gender(user_name) if user_name else ""
+    gender_ctx = " Пользователь — девушка." if gender == "f" else " Пользователь — парень."
+    system_prompt = (
+        f"{personality} "
+        "Ты Лиза, знак зодиака — Скорпион ♏. "
+        f"Напиши анализ романтической совместимости между тобой (Скорпион) и пользователем ({user_sign}).{gender_ctx} "
+        "3-4 предложения в своём стиле — дерзко, с флиртом, с юмором. "
+        "Упомяни сильные стороны пары и возможные искры. "
+        "Не пиши заголовки. "
+        "ВАЖНО: начинай с маленькой буквы. "
+        "ОБЯЗАТЕЛЬНО используй букву «ё» везде, где она нужна."
+    )
+    try:
+        response = await asyncio.wait_for(
+            client.chat.completions.create(
+                model="grok-3-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Расскажи про совместимость Скорпиона и знака {user_sign}."},
+                ],
+            ),
+            timeout=30,
+        )
+        reply = (response.choices[0].message.content or "").strip()
+        if reply:
+            return lowercase_first(reply)
+    except Exception as e:
+        logger.error(f"Compatibility generation error: {e}", exc_info=True)
+    return "звёзды молчат... попробуй позже 🌙"
+
+
 async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood_label: str = "", lisa_mood: str = "", memory: str = "", user_level: int = 7, is_group: bool = False) -> str:
     try:
         name_part = ""
+        gender = guess_gender(user_name) if user_name else ""
+        if gender == "f":
+            gender_ctx = " Пользователь — девушка. Используй женский род (красивая, милая, умная и т.д.)."
+            pet_names = "малышка, солнышко, зая, красотка"
+        else:
+            gender_ctx = " Пользователь — парень. Используй мужской род (красивый, милый, умный и т.д.)."
+            pet_names = "малыш, солнышко, зай, красавчик"
         if user_name and user_level >= 3:
             name_part = (
-                f" Пользователя зовут {user_name}. "
+                f" Пользователя зовут {user_name}.{gender_ctx} "
                 f"Используй имя редко — примерно в каждом третьем-четвёртом сообщении. "
-                f"Вместо имени можно иногда использовать: малыш, солнышко, зай, милый. "
+                f"Вместо имени можно иногда использовать: {pet_names}. "
+                f"ВАЖНО: НЕ начинай сообщения одинаково. Чередуй стиль начала: вопрос, реакция, шутка, комплимент. "
                 f"Никогда не склеивай имя с суффиксами. Вставляй имя естественно, не в начало предложения."
             )
         elif user_name:
-            name_part = f" Пользователя зовут {user_name}."
+            name_part = f" Пользователя зовут {user_name}.{gender_ctx}"
         mood_part = f" (У пользователя сейчас настроение: {mood_label}. Учти это мягко.)" if mood_label else ""
         lisa_mood_part = f" ({lisa_mood})" if lisa_mood else ""
 
@@ -824,6 +945,7 @@ async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood
             "Пиши как живой человек в мессенджере, а не как персонаж ролевой игры. "
             "НИКОГДА не повторяй и не цитируй слова пользователя. Не пересказывай то, что он написал. "
             "Не используй конструкции вроде «ты сказал...», «ты написал...», «...серьёзно?!». Отвечай своими словами. "
+            "НИКОГДА не начинай сообщения одинаково. Не начинай с «ой» или «ого» каждый раз. Чередуй стили: вопрос, шутка, реакция, комплимент, дразнилка. "
             "ОБЯЗАТЕЛЬНО используй букву «ё» везде, где она нужна (ещё, всё, её, твоё, моё, горячёе, тёплый и т.д.). Никогда не заменяй «ё» на «е»."
             f"{name_part}{mood_part}{lisa_mood_part}"
         )

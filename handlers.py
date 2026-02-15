@@ -26,7 +26,8 @@ from config import (
     RANDOM_GPT_RESPONSE_CHANCE,
     GROUP_COMMENT_CHANCE, GROUP_COMMENT_BUFFER_SIZE, chat_message_buffer,
     JEALOUSY_MIN_LEVEL, JEALOUSY_THRESHOLD, JEALOUSY_CHANCE, JEALOUSY_COOLDOWN_SEC,
-    JEALOUSY_REACTIONS, jealousy_counters, jealousy_cooldowns,
+    JEALOUSY_DM_MIN_SILENCE_HOURS, JEALOUSY_DM_CHANCE, JEALOUSY_DM_COOLDOWN_SEC,
+    JEALOUSY_REACTIONS, jealousy_counters, jealousy_cooldowns, jealousy_dm_cooldowns,
     LEVEL_VOICE_UNLOCK, LEVEL_SELFIE_UNLOCK, LEVEL_VIDEO_NOTE_UNLOCK, LEVEL_NUDES_UNLOCK,
     XP_PER_TEXT, XP_PER_VOICE, XP_PER_NUDES, XP_PER_SELFIE, XP_PER_VIDEO_NOTE,
     XP_PER_HOROSCOPE, XP_PER_DIARY, ZODIAC_SIGNS,
@@ -53,10 +54,11 @@ from db import (
     get_user_achievements, grant_achievement,
     get_user_zodiac, set_user_zodiac, get_last_horoscope_date, set_last_horoscope_date,
     get_last_challenge_date, set_last_challenge_date,
+    update_private_interaction, get_private_interaction_info,
     get_top_users,
     run_sync,
 )
-from gpt import ask_chatgpt, text_to_voice, get_ogg_duration, transcribe_voice, summarize_memory, generate_chat_comment, generate_jealous_comment, react_to_photo, generate_selfie, generate_video_note, generate_story_message, generate_horoscope, generate_diary, extract_pose_hint, generate_challenge
+from gpt import ask_chatgpt, text_to_voice, get_ogg_duration, transcribe_voice, summarize_memory, generate_chat_comment, generate_jealous_comment, react_to_photo, generate_selfie, generate_video_note, generate_story_message, generate_horoscope, generate_diary, extract_pose_hint, generate_challenge, generate_compatibility, generate_jealous_dm
 from games import handle_game_response
 from utils import (
     escape_markdown_v2, lowercase_first, is_bot_enabled,
@@ -824,18 +826,47 @@ async def horoscope_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await send_level_up(context.bot, chat_id, new_level, update.effective_chat.type)
 
 
+# ---------------------- COMPATIBILITY ----------------------
+
+async def compatibility_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+
+    sign = get_user_zodiac(user_id)
+    if not sign:
+        signs_list = ", ".join(ZODIAC_SIGNS.keys())
+        await update.message.reply_text(
+            f"сначала укажи свой знак зодиака: /horoscope овен\n\nзнаки: {signs_list}"
+        )
+        return
+
+    user_name = get_casual_name(update.effective_user.first_name or "")
+    level_info = await run_sync(get_user_level_info, user_id)
+    user_level = level_info["level"]
+
+    await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+
+    text = await generate_compatibility(sign, user_name, user_level)
+
+    emoji = ZODIAC_SIGNS.get(sign, "🔮")
+    await update.message.reply_text(f"♏ Скорпион + {emoji} {sign.capitalize()}\n\n{text}")
+
+
 # ---------------------- CHALLENGE ----------------------
 
 async def challenge_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.info(f"challenge_cmd called by user {update.effective_user.id} in chat {update.effective_chat.id}")
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
 
     if user_id in active_games:
+        logger.info(f"challenge_cmd: user {user_id} already in active_games: {active_games[user_id]}")
         await update.message.reply_text("у тебя уже идёт игра или челлендж 😏 заверши сначала")
         return
 
     today = local_now().strftime("%Y-%m-%d")
     last_date = await run_sync(get_last_challenge_date, user_id)
+    logger.info(f"challenge_cmd: last_date={last_date}, today={today}")
     if last_date == today:
         await update.message.reply_text("я уже давала тебе челлендж сегодня 😏 приходи завтра!")
         return
@@ -844,6 +875,7 @@ async def challenge_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     level_info = await run_sync(get_user_level_info, user_id)
     user_level = level_info["level"]
     memory = await run_sync(get_user_memory, user_id)
+    logger.info(f"challenge_cmd: generating challenge for {user_first_name}, level={user_level}")
 
     lisa_mood_key = await run_sync(get_lisa_mood)
     lisa_mood_data = LISA_MOODS.get(lisa_mood_key, LISA_MOODS["playful"])
@@ -851,20 +883,25 @@ async def challenge_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
     await asyncio.sleep(random.uniform(1, 2))
 
-    challenge_text = await generate_challenge(
-        user_name=user_first_name,
-        user_level=user_level,
-        lisa_mood_prompt=lisa_mood_data["prompt_mod"],
-        memory=memory,
-    )
+    try:
+        challenge_text = await generate_challenge(
+            user_name=user_first_name,
+            user_level=user_level,
+            lisa_mood_prompt=lisa_mood_data["prompt_mod"],
+            memory=memory,
+        )
+        logger.info(f"challenge_cmd: generated challenge: {challenge_text[:80]}")
 
-    active_games[user_id] = {
-        "type": "challenge",
-        "challenge": challenge_text,
-    }
-    await run_sync(set_last_challenge_date, user_id, today)
+        active_games[user_id] = {
+            "type": "challenge",
+            "challenge": challenge_text,
+        }
+        await run_sync(set_last_challenge_date, user_id, today)
 
-    await update.message.reply_text(f"🎯 челлендж от Лизы:\n\n{challenge_text}")
+        await update.message.reply_text(f"🎯 челлендж от Лизы:\n\n{challenge_text}")
+    except Exception as e:
+        logger.error(f"challenge_cmd error: {e}", exc_info=True)
+        await update.message.reply_text("ой, не получилось придумать челлендж 😔 попробуй позже")
 
 
 # ---------------------- MESSAGE HANDLERS ----------------------
@@ -884,6 +921,10 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     await run_sync(update_last_interaction, user_id, chat_id, user.first_name or user_username or "", user_username, chat.type)
     await run_sync(ensure_user_state_row, user_id)
+
+    # Track private interaction for jealousy DM
+    if chat.type == "private":
+        await run_sync(update_private_interaction, user_id, chat_id)
 
     # Use custom_name if set, otherwise get_casual_name
     _st_voice = await run_sync(get_user_settings, user_id)
@@ -1024,6 +1065,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     await run_sync(update_last_interaction, user_id, chat_id, user_first_name, user_username, chat.type)
     await run_sync(ensure_user_state_row, user_id)
+
+    # Track private interaction for jealousy DM
+    if chat.type == "private":
+        await run_sync(update_private_interaction, user_id, chat_id)
 
     # Use custom_name if set, otherwise get_casual_name
     _st_name = await run_sync(get_user_settings, user_id)
@@ -1176,6 +1221,29 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             jealousy_counters[chat_id][user_id] = 0
             jealousy_cooldowns[chat_id][user_id] = time.time()
             return
+
+        # Jealousy DM: user active in group but silent in private
+        if (
+            user_level >= JEALOUSY_MIN_LEVEL
+            and time.time() - jealousy_dm_cooldowns[user_id] >= JEALOUSY_DM_COOLDOWN_SEC
+            and random.random() < JEALOUSY_DM_CHANCE
+        ):
+            try:
+                priv_info = await run_sync(get_private_interaction_info, user_id)
+                if priv_info and priv_info["last_private_interaction"]:
+                    last_priv = priv_info["last_private_interaction"]
+                    if last_priv.tzinfo is None:
+                        from config import LOCAL_TZ
+                        last_priv = LOCAL_TZ.localize(last_priv)
+                    silence_hours = int((local_now() - last_priv).total_seconds() / 3600)
+                    if silence_hours >= JEALOUSY_DM_MIN_SILENCE_HOURS:
+                        priv_chat_id = priv_info["private_chat_id"]
+                        dm_text = await generate_jealous_dm(user_first_name, user_level, silence_hours)
+                        await context.bot.send_message(chat_id=priv_chat_id, text=dm_text)
+                        jealousy_dm_cooldowns[user_id] = time.time()
+                        logger.info(f"Jealousy DM sent to {user_id}, silent {silence_hours}h in private")
+            except Exception as e:
+                logger.error(f"Jealousy DM error for {user_id}: {e}", exc_info=True)
 
         if random.random() < GROUP_COMMENT_CHANCE:
             try:
@@ -1393,6 +1461,24 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     user_id = user.id
 
     if chat.type != "private" and not is_bot_enabled(chat_id):
+        return
+
+    # Challenge: if user has active challenge and sends a photo, verify it
+    game = active_games.get(user_id)
+    if game and game["type"] == "challenge" and update.message.photo:
+        caption = (update.message.caption or "").strip()
+        description = f"[пользователь отправил фото] {caption}" if caption else "[пользователь отправил фото]"
+        from gpt import verify_challenge
+        from config import XP_PER_CHALLENGE
+        done, comment = await verify_challenge(game["challenge"], description)
+        if done:
+            active_games.pop(user_id, None)
+            _, new_level, leveled_up = add_xp(user_id, XP_PER_CHALLENGE)
+            await update.message.reply_text(f"{comment}\n\n+{XP_PER_CHALLENGE} XP ⭐")
+            if leveled_up:
+                await send_level_up(context.bot, chat_id, new_level)
+        else:
+            await update.message.reply_text(comment)
         return
 
     is_private = chat.type == "private"

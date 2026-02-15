@@ -57,6 +57,9 @@ JEALOUSY_MIN_LEVEL = 4
 JEALOUSY_THRESHOLD = 10
 JEALOUSY_CHANCE = 1 / 3
 JEALOUSY_COOLDOWN_SEC = 30 * 60
+JEALOUSY_DM_MIN_SILENCE_HOURS = 6
+JEALOUSY_DM_CHANCE = 0.3
+JEALOUSY_DM_COOLDOWN_SEC = 12 * 60 * 60
 JEALOUSY_REACTIONS = [
     "а меня тут вообще кто-нибудь замечает? 😒",
     "ну да, общайтесь, я тут просто сижу 🙄",
@@ -372,6 +375,25 @@ NICKNAME_MAP = {
 }
 
 
+FEMALE_NAMES = {
+    "александра", "анастасия", "екатерина", "мария", "елена",
+    "наталья", "татьяна", "ольга", "ирина", "светлана",
+    "анна", "юлия", "дарья", "виктория", "полина",
+    "ксения", "валерия", "алина", "кристина", "марина",
+    "вероника", "евгения", "людмила", "галина", "надежда",
+    "любовь", "лариса", "диана", "софья", "софия",
+    "варвара", "маргарита", "елизавета", "милана", "алиса",
+    "ева", "арина", "василиса",
+    # diminutives
+    "сашенька", "настя", "катя", "маша", "лена", "наташа",
+    "таня", "оля", "ира", "света", "аня", "юля", "даша",
+    "вика", "полинка", "ксюша", "лера", "алинка", "кристинка",
+    "маринка", "ника", "женя", "люда", "галя", "надя", "люба",
+    "лара", "дианка", "соня", "варя", "рита", "лиза",
+    "миланка", "алиска", "евочка", "аринка", "василиска",
+}
+
+
 def _capitalize_name(name: str) -> str:
     """Ensure first letter is uppercase (works for Cyrillic too)."""
     if not name:
@@ -385,6 +407,21 @@ def get_casual_name(first_name: str) -> str:
         return first_name
     result = NICKNAME_MAP.get(first_name.lower().strip(), first_name)
     return _capitalize_name(result)
+
+
+def guess_gender(first_name: str) -> str:
+    """Guess gender from first name. Returns 'f', 'm', or '' (unknown)."""
+    if not first_name:
+        return ""
+    name = first_name.lower().strip()
+    if name in FEMALE_NAMES:
+        return "f"
+    if name in NICKNAME_MAP and name not in FEMALE_NAMES:
+        return "m"
+    # heuristic: Russian female names typically end in -а, -я
+    if name.endswith(("а", "я")) and name not in ("никита", "илья", "лёва", "данила", "кузьма"):
+        return "f"
+    return "m"
 
 
 # ---------------------- LISA MOOD ----------------------
@@ -543,6 +580,7 @@ THOUGHT_CHANCE = 0.5
 THOUGHT_VOICE_CHANCE = 0.25
 THOUGHT_CHECK_INTERVAL_SEC = 2 * 60 * 60
 CHALLENGE_CHECK_INTERVAL_SEC = 30 * 60
+COMPLIMENT_CHECK_INTERVAL_SEC = 30 * 60
 THOUGHT_ACTIVE_DAYS = 3
 
 ZODIAC_SIGNS = {
@@ -591,3 +629,4 @@ active_games = {}
 chat_message_buffer = defaultdict(list)  # chat_id -> list["Имя: текст"]
 jealousy_counters = defaultdict(lambda: defaultdict(int))    # chat_id -> user_id -> count
 jealousy_cooldowns = defaultdict(lambda: defaultdict(float)) # chat_id -> user_id -> timestamp
+jealousy_dm_cooldowns = defaultdict(float)  # user_id -> timestamp
