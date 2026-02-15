@@ -91,6 +91,72 @@ def _merge_short(parts: list[str], min_len: int = 15, max_parts: int = 3) -> lis
 
     return merged
 
+
+# ---------------------- HUMANIZE ----------------------
+# Slang substitutions Lisa would naturally use
+_SLANG_MAP = [
+    (r"\bсейчас\b", "щас"),
+    (r"\bвообще\b", "вобще"),
+    (r"\bкажется\b", "кажись"),
+    (r"\bнормально\b", "норм"),
+    (r"\bхорошо\b", "хорош"),
+    (r"\bпожалуйста\b", "пожааалуйста"),
+    (r"\bсерьёзно\b", "серьёзн"),
+    (r"\bнаверное\b", "наверн"),
+    (r"\bкороче\b", "корч"),
+    (r"\bчеловек\b", "челик"),
+]
+
+# Common typos: doubled letter, swapped adjacent letters, missed letter
+def _add_typo(word: str) -> str:
+    """Add a single realistic typo to a word."""
+    if len(word) < 4:
+        return word
+    chars = list(word)
+    method = random.choice(["double", "swap", "skip"])
+    idx = random.randint(1, len(chars) - 2)
+    if method == "double":
+        chars.insert(idx, chars[idx])
+    elif method == "swap" and idx < len(chars) - 1:
+        chars[idx], chars[idx + 1] = chars[idx + 1], chars[idx]
+    elif method == "skip":
+        chars.pop(idx)
+    return "".join(chars)
+
+
+def humanize_text(text: str) -> str:
+    """Post-process GPT reply to add human-like artifacts (slang, typos)."""
+    if not text or len(text) < 5:
+        return text
+
+    # Slang substitutions — 15% chance per match
+    for pattern, replacement in _SLANG_MAP:
+        if random.random() < 0.15:
+            text = re.sub(pattern, replacement, text, count=1, flags=re.IGNORECASE)
+
+    # Typo — 5% chance, pick one random word
+    if random.random() < 0.05:
+        words = text.split()
+        if len(words) >= 3:
+            # Pick a word that's long enough (not emoji, not short)
+            candidates = [i for i, w in enumerate(words) if len(w) >= 4 and w.isalpha()]
+            if candidates:
+                idx = random.choice(candidates)
+                words[idx] = _add_typo(words[idx])
+                text = " ".join(words)
+
+    # Trailing punctuation variation — 8% chance: add extra chars
+    if random.random() < 0.08:
+        if text.endswith("!"):
+            text = text[:-1] + random.choice(["!!", "!!!", "!1"])
+        elif text.endswith("?"):
+            text = text[:-1] + random.choice(["??", "???"])
+        elif text.endswith("."):
+            text = text[:-1] + random.choice(["...", "..", ""])
+
+    return text
+
+
 # ---------------------- TIME HELPERS ----------------------
 def local_now() -> datetime:
     return datetime.now(LOCAL_TZ)

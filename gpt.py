@@ -15,7 +15,7 @@ from config import (
     guess_gender,
 )
 from base64 import b64encode, b64decode
-from utils import lowercase_first
+from utils import lowercase_first, humanize_text
 
 
 WHISPER_CHANCE = 1 / 6
@@ -1019,6 +1019,7 @@ async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood
             return "эээ… я задумалась 😅"
 
         reply = lowercase_first(reply)
+        reply = humanize_text(reply)
         return reply
 
     except Exception as e:
