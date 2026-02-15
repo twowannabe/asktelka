@@ -805,6 +805,75 @@ async def verify_challenge(challenge_text: str, user_response: str) -> tuple[boo
         return False, "не поняла, попробуй ещё раз 😅"
 
 
+async def generate_compliment(user_name: str, user_level: int, lisa_mood_prompt: str, memory: str) -> str:
+    personality = LEVEL_PERSONALITIES.get(user_level, LEVEL_PERSONALITIES[7])
+    gender = guess_gender(user_name) if user_name else ""
+    gender_ctx = " Пользователь — девушка, используй женский род." if gender == "f" else " Пользователь — парень, используй мужской род."
+    name_ctx = (f" Пользователя зовут {user_name}.{gender_ctx}" if user_name else "")
+    memory_ctx = f" Память о пользователе: {memory}" if memory else ""
+    system_prompt = (
+        f"{personality} "
+        f"Ты Лиза, делаешь комплимент пользователю.{name_ctx}{memory_ctx} "
+        f"Твоё настроение: {lisa_mood_prompt} "
+        "Напиши один короткий искренний комплимент (1-2 предложения). "
+        "Комплимент может быть про внешность, характер, чувство юмора, то как человек общается. "
+        "Будь оригинальной, не используй шаблоны вроде 'ты лучший'. "
+        "ВАЖНО: начинай с маленькой буквы. "
+        "Никогда не используй ремарки в скобках, звуковые эффекты и ролеплей-действия. "
+        "ОБЯЗАТЕЛЬНО используй букву «ё» везде, где она нужна."
+    )
+    try:
+        response = await asyncio.wait_for(
+            client.chat.completions.create(
+                model="grok-3-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": "Сделай мне комплимент."},
+                ],
+            ),
+            timeout=30,
+        )
+        reply = (response.choices[0].message.content or "").strip()
+        if reply:
+            return lowercase_first(reply)
+    except Exception as e:
+        logger.error(f"Compliment generation error: {e}", exc_info=True)
+    return "ты сегодня особенно хорош 💛" if gender != "f" else "ты сегодня особенно хороша 💛"
+
+
+async def generate_compatibility(user_sign: str, user_name: str, user_level: int) -> str:
+    personality = LEVEL_PERSONALITIES.get(user_level, LEVEL_PERSONALITIES[7])
+    gender = guess_gender(user_name) if user_name else ""
+    gender_ctx = " Пользователь — девушка." if gender == "f" else " Пользователь — парень."
+    system_prompt = (
+        f"{personality} "
+        "Ты Лиза, знак зодиака — Скорпион ♏. "
+        f"Напиши анализ романтической совместимости между тобой (Скорпион) и пользователем ({user_sign}).{gender_ctx} "
+        "3-4 предложения в своём стиле — дерзко, с флиртом, с юмором. "
+        "Упомяни сильные стороны пары и возможные искры. "
+        "Не пиши заголовки. "
+        "ВАЖНО: начинай с маленькой буквы. "
+        "ОБЯЗАТЕЛЬНО используй букву «ё» везде, где она нужна."
+    )
+    try:
+        response = await asyncio.wait_for(
+            client.chat.completions.create(
+                model="grok-3-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Расскажи про совместимость Скорпиона и знака {user_sign}."},
+                ],
+            ),
+            timeout=30,
+        )
+        reply = (response.choices[0].message.content or "").strip()
+        if reply:
+            return lowercase_first(reply)
+    except Exception as e:
+        logger.error(f"Compatibility generation error: {e}", exc_info=True)
+    return "звёзды молчат... попробуй позже 🌙"
+
+
 async def ask_chatgpt(messages, user_name: str = "", personality: str = "", mood_label: str = "", lisa_mood: str = "", memory: str = "", user_level: int = 7, is_group: bool = False) -> str:
     try:
         name_part = ""

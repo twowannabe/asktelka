@@ -56,7 +56,7 @@ from db import (
     get_top_users,
     run_sync,
 )
-from gpt import ask_chatgpt, text_to_voice, get_ogg_duration, transcribe_voice, summarize_memory, generate_chat_comment, generate_jealous_comment, react_to_photo, generate_selfie, generate_video_note, generate_story_message, generate_horoscope, generate_diary, extract_pose_hint, generate_challenge
+from gpt import ask_chatgpt, text_to_voice, get_ogg_duration, transcribe_voice, summarize_memory, generate_chat_comment, generate_jealous_comment, react_to_photo, generate_selfie, generate_video_note, generate_story_message, generate_horoscope, generate_diary, extract_pose_hint, generate_challenge, generate_compatibility
 from games import handle_game_response
 from utils import (
     escape_markdown_v2, lowercase_first, is_bot_enabled,
@@ -102,6 +102,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/circle — видео-кружочек с lip-sync 🎥\n"
         "/voice [--стиль] текст — голосовое 🎙\n"
         "/horoscope [знак] — гороскоп 🔮\n"
+        "/compatibility — совместимость с Лизой 💕\n"
         "/story — интерактивный мини-сюжет 💫\n\n"
         "🎮 мини-игры:\n"
         "/challenge — челлендж дня (+5 XP)\n"
@@ -820,6 +821,32 @@ async def horoscope_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     _, new_level, leveled_up = add_xp(user_id, XP_PER_HOROSCOPE)
     if leveled_up:
         await send_level_up(context.bot, chat_id, new_level, update.effective_chat.type)
+
+
+# ---------------------- COMPATIBILITY ----------------------
+
+async def compatibility_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+
+    sign = get_user_zodiac(user_id)
+    if not sign:
+        signs_list = ", ".join(ZODIAC_SIGNS.keys())
+        await update.message.reply_text(
+            f"сначала укажи свой знак зодиака: /horoscope овен\n\nзнаки: {signs_list}"
+        )
+        return
+
+    user_name = get_casual_name(update.effective_user.first_name or "")
+    level_info = await run_sync(get_user_level_info, user_id)
+    user_level = level_info["level"]
+
+    await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+
+    text = await generate_compatibility(sign, user_name, user_level)
+
+    emoji = ZODIAC_SIGNS.get(sign, "🔮")
+    await update.message.reply_text(f"♏ Скорпион + {emoji} {sign.capitalize()}\n\n{text}")
 
 
 # ---------------------- CHALLENGE ----------------------

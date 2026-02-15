@@ -16,7 +16,8 @@ from telegram.ext import (
 
 from config import (
     TELEGRAM_TOKEN, CHECK_LONELY_INTERVAL_SEC, LISA_MOOD_UPDATE_INTERVAL_SEC,
-    RITUAL_CHECK_INTERVAL_SEC, THOUGHT_CHECK_INTERVAL_SEC, CHALLENGE_CHECK_INTERVAL_SEC, logger,
+    RITUAL_CHECK_INTERVAL_SEC, THOUGHT_CHECK_INTERVAL_SEC,
+    CHALLENGE_CHECK_INTERVAL_SEC, COMPLIMENT_CHECK_INTERVAL_SEC, logger,
 )
 from db import init_db
 from handlers import (
@@ -24,11 +25,11 @@ from handlers import (
     set_personality_cmd, dontwritefirst_cmd, writefirst_cmd,
     mood_cmd, clear_mood_cmd, mood_lisa_cmd, disable_cmd, reset_cmd,
     selfie_cmd, nudes_gen_cmd, circle_cmd, horoscope_cmd, diary_cmd, voice_cmd,
-    challenge_cmd,
+    challenge_cmd, compatibility_cmd,
     handle_message, handle_voice, handle_media, handle_webapp_data, error_handler,
 )
 from games import truth_cmd, guess_cmd, riddle_cmd, quiz_cmd, quiz_callback
-from checkin import check_lonely_users, update_lisa_mood, send_ritual, send_lisa_thoughts, send_daily_challenges
+from checkin import check_lonely_users, update_lisa_mood, send_ritual, send_lisa_thoughts, send_daily_challenges, send_daily_compliments
 
 
 def main():
@@ -60,6 +61,7 @@ def main():
     application.add_handler(CommandHandler("voice", voice_cmd))
     application.add_handler(CommandHandler("story", story_cmd))
     application.add_handler(CommandHandler("challenge", challenge_cmd))
+    application.add_handler(CommandHandler("compatibility", compatibility_cmd))
 
     # Mini-games
     application.add_handler(CommandHandler("truth", truth_cmd))
@@ -100,6 +102,11 @@ def main():
         send_daily_challenges,
         interval=CHALLENGE_CHECK_INTERVAL_SEC,
         first=90,
+    )
+    job_queue.run_repeating(
+        send_daily_compliments,
+        interval=COMPLIMENT_CHECK_INTERVAL_SEC,
+        first=45,
     )
 
     logger.info("Bot started")
