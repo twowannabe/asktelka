@@ -372,6 +372,25 @@ NICKNAME_MAP = {
 }
 
 
+FEMALE_NAMES = {
+    "александра", "анастасия", "екатерина", "мария", "елена",
+    "наталья", "татьяна", "ольга", "ирина", "светлана",
+    "анна", "юлия", "дарья", "виктория", "полина",
+    "ксения", "валерия", "алина", "кристина", "марина",
+    "вероника", "евгения", "людмила", "галина", "надежда",
+    "любовь", "лариса", "диана", "софья", "софия",
+    "варвара", "маргарита", "елизавета", "милана", "алиса",
+    "ева", "арина", "василиса",
+    # diminutives
+    "сашенька", "настя", "катя", "маша", "лена", "наташа",
+    "таня", "оля", "ира", "света", "аня", "юля", "даша",
+    "вика", "полинка", "ксюша", "лера", "алинка", "кристинка",
+    "маринка", "ника", "женя", "люда", "галя", "надя", "люба",
+    "лара", "дианка", "соня", "варя", "рита", "лиза",
+    "миланка", "алиска", "евочка", "аринка", "василиска",
+}
+
+
 def _capitalize_name(name: str) -> str:
     """Ensure first letter is uppercase (works for Cyrillic too)."""
     if not name:
@@ -385,6 +404,21 @@ def get_casual_name(first_name: str) -> str:
         return first_name
     result = NICKNAME_MAP.get(first_name.lower().strip(), first_name)
     return _capitalize_name(result)
+
+
+def guess_gender(first_name: str) -> str:
+    """Guess gender from first name. Returns 'f', 'm', or '' (unknown)."""
+    if not first_name:
+        return ""
+    name = first_name.lower().strip()
+    if name in FEMALE_NAMES:
+        return "f"
+    if name in NICKNAME_MAP and name not in FEMALE_NAMES:
+        return "m"
+    # heuristic: Russian female names typically end in -а, -я
+    if name.endswith(("а", "я")) and name not in ("никита", "илья", "лёва", "данила", "кузьма"):
+        return "f"
+    return "m"
 
 
 # ---------------------- LISA MOOD ----------------------

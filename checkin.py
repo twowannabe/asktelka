@@ -20,7 +20,7 @@ from config import (
     LONELY_MIN_SILENCE_HOURS, LONELY_CHECKIN_CHANCE,
     STORY_TEMPLATES, STORY_CHECKIN_CHANCE, LEVEL_STORY_UNLOCK,
     active_games,
-    get_casual_name, _capitalize_name,
+    get_casual_name, _capitalize_name, guess_gender,
     client, logger,
 )
 from db import (
@@ -57,15 +57,22 @@ async def generate_checkin_text(first_name: str, mood_label: str | None = None,
         if memory:
             memory_ctx = f" Вот что ты помнишь о пользователе из прошлых разговоров: {memory}"
 
-    name_ctx = f" Пользователя зовут {first_name}. Обращайся по имени." if first_name else ""
+    gender = guess_gender(first_name) if first_name else ""
+    if gender == "f":
+        gender_ctx = " Пользователь — девушка, используй женский род."
+        pronoun = "Она"
+    else:
+        gender_ctx = " Пользователь — парень, используй мужской род."
+        pronoun = "Он"
+    name_ctx = f" Пользователя зовут {first_name}. Обращайся по имени.{gender_ctx}" if first_name else ""
 
     if silence_hours < 12:
-        silence_ctx = " Он не писал несколько часов."
+        silence_ctx = f" {pronoun} не писал(а) несколько часов."
     elif silence_hours < 48:
-        silence_ctx = " Он не писал со вчера."
+        silence_ctx = f" {pronoun} не писал(а) со вчера."
     else:
         days = silence_hours // 24
-        silence_ctx = f" Он не писал уже {days} дней."
+        silence_ctx = f" {pronoun} не писал(а) уже {days} дней."
 
     prompt = (
         f"Ты Лиза — тёплая, заботливая девушка с лёгким флиртом. "
@@ -249,14 +256,16 @@ async def generate_ritual_text(first_name: str, ritual_type: str, mood_label: st
             memory_ctx = f" Память о пользователе: {memory}"
 
     mood_ctx = f" Настроение пользователя: {mood_label}." if mood_label else ""
-    name_ctx = f" Пользователя зовут {first_name}." if first_name else ""
+    gender = guess_gender(first_name) if first_name else ""
+    gender_ctx = " Пользователь — девушка, используй женский род." if gender == "f" else " Пользователь — парень, используй мужской род."
+    name_ctx = (f" Пользователя зовут {first_name}.{gender_ctx}" if first_name else "")
 
     prompt = (
         f"{personality} "
         f"Ты Лиза. {task}.{name_ctx}{mood_ctx}{memory_ctx} "
         f"Твоё настроение: {lisa_mood_prompt} "
         "1-2 предложения, как в мессенджере. "
-        "ВАЖНО: начинай с маленькой буквы. "
+        "ВАЖНО: начинай с маленькой буквы. НЕ начинай каждое сообщение одинаково. "
         "ОБЯЗАТЕЛЬНО используй букву «ё» везде, где она нужна. "
         "Никогда не используй ремарки в скобках, звуковые эффекты и ролеплей-действия."
     )
