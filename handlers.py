@@ -63,7 +63,22 @@ from games import handle_game_response
 from utils import (
     escape_markdown_v2, lowercase_first, is_bot_enabled,
     classify_mood, cheap_intent, local_now,
+    typing_delay, split_message,
 )
+
+
+async def _send_reply(bot, chat_id: int, text: str, reply_to_message_id: int | None = None, is_private: bool = False) -> None:
+    """Send text as 1-3 messages with adaptive typing delays for natural feel."""
+    parts = split_message(text)
+
+    for i, part in enumerate(parts):
+        await bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+        await asyncio.sleep(typing_delay(part))
+        rid = reply_to_message_id if i == 0 and not is_private else None
+        if rid:
+            await bot.send_message(chat_id=chat_id, text=part, reply_to_message_id=rid)
+        else:
+            await bot.send_message(chat_id=chat_id, text=part)
 
 
 async def _update_memory(user_id: int):
@@ -987,7 +1002,6 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         messages = await run_sync(load_context, user_id, 10)
 
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
-    await asyncio.sleep(random.uniform(1, 2))
 
     reply = await ask_chatgpt(
         messages,
@@ -1006,6 +1020,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await run_sync(save_message, user_id, "assistant", reply, chat_id, "Лиза")
 
     reply_to_message_id = update.message.message_id
+    is_private = chat.type == "private"
 
     sent_as_voice = False
     _voice_ok = _st_voice.get("voice_enabled", True) and user_level >= LEVEL_VOICE_UNLOCK
@@ -1015,7 +1030,8 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             duration = int(get_ogg_duration(voice_data)) or None
             voice_file = io.BytesIO(voice_data)
             voice_file.name = "voice.ogg"
-            if chat.type == "private":
+            await asyncio.sleep(typing_delay(reply))
+            if is_private:
                 await context.bot.send_voice(chat_id=chat_id, voice=voice_file, duration=duration)
             else:
                 await context.bot.send_voice(chat_id=chat_id, voice=voice_file, duration=duration, reply_to_message_id=reply_to_message_id)
@@ -1025,10 +1041,11 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     if not sent_as_voice:
         try:
-            if chat.type == "private":
-                await context.bot.send_message(chat_id=chat_id, text=reply)
-            else:
-                await update.message.reply_text(reply, reply_to_message_id=reply_to_message_id)
+            await _send_reply(
+                context.bot, chat_id, reply,
+                reply_to_message_id=reply_to_message_id if not is_private else None,
+                is_private=is_private,
+            )
         except Exception as e:
             logger.error(f"Telegram send error: {e}", exc_info=True)
 
@@ -1317,7 +1334,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         messages = await run_sync(load_context, user_id, 10)
 
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
-    await asyncio.sleep(random.uniform(1, 4))
 
     reply = await ask_chatgpt(
         messages,
@@ -1357,6 +1373,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 duration = int(get_ogg_duration(voice_data)) or None
                 voice_file = io.BytesIO(voice_data)
                 voice_file.name = "voice.ogg"
+                await asyncio.sleep(typing_delay(reply))
                 if chat.type == "private":
                     await context.bot.send_voice(chat_id=chat_id, voice=voice_file, duration=duration)
                 else:
@@ -1367,19 +1384,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     if not sent_as_voice:
         try:
-            if chat.type == "private":
-                await context.bot.send_message(chat_id=chat_id, text=reply)
-            else:
-                escaped = escape_markdown_v2(reply)
-                if len(escaped) > 4096:
-                    escaped = escaped[:4096]
-                await update.message.reply_text(
-                    escaped,
-                    parse_mode=ParseMode.MARKDOWN_V2,
-                    reply_to_message_id=reply_to_message_id,
-                )
-        except BadRequest:
-            await context.bot.send_message(chat_id=chat_id, text=reply)
+            await _send_reply(
+                context.bot, chat_id, reply,
+                reply_to_message_id=reply_to_message_id if not is_private else None,
+                is_private=is_private,
+            )
         except Exception as e:
             logger.error(f"Telegram send error: {e}", exc_info=True)
 
