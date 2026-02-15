@@ -2,6 +2,7 @@
 
 import os
 import re
+import random
 from datetime import datetime
 
 from config import LOCAL_TZ, disabled_chats
@@ -20,6 +21,75 @@ def lowercase_first(text: str) -> str:
 
 def is_bot_enabled(chat_id: int) -> bool:
     return chat_id not in disabled_chats
+
+
+def typing_delay(text: str) -> float:
+    """Adaptive typing delay based on text length — shorter texts get shorter pauses."""
+    n = len(text)
+    if n < 30:
+        return random.uniform(0.5, 1.5)
+    if n < 80:
+        return random.uniform(1.0, 2.5)
+    if n < 150:
+        return random.uniform(2.0, 4.0)
+    return random.uniform(3.0, 5.0)
+
+
+def split_message(text: str) -> list[str]:
+    """Split a long reply into 2-3 natural chunks for more human-like delivery."""
+    if len(text) < 60:
+        return [text]
+
+    # Try splitting by double newline first
+    parts = text.split("\n\n")
+    if len(parts) >= 2:
+        parts = [p.strip() for p in parts if p.strip()]
+        if len(parts) >= 2:
+            return _merge_short(parts)
+
+    # Try splitting by single newline
+    parts = text.split("\n")
+    if len(parts) >= 2:
+        parts = [p.strip() for p in parts if p.strip()]
+        if len(parts) >= 2:
+            return _merge_short(parts)
+
+    # Try splitting by sentence boundaries
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    if len(sentences) >= 2:
+        return _merge_short(sentences)
+
+    return [text]
+
+
+def _merge_short(parts: list[str], min_len: int = 15, max_parts: int = 3) -> list[str]:
+    """Merge short fragments together, cap at max_parts."""
+    merged: list[str] = []
+    buf = ""
+    for p in parts:
+        if buf:
+            buf += "\n" + p
+        else:
+            buf = p
+        if len(buf) >= min_len:
+            merged.append(buf)
+            buf = ""
+    if buf:
+        if merged:
+            merged[-1] += "\n" + buf
+        else:
+            merged.append(buf)
+
+    # Cap at max_parts by merging trailing parts
+    while len(merged) > max_parts:
+        merged[-2] += "\n" + merged[-1]
+        merged.pop()
+
+    # If only got 1 part after merging, return as-is
+    if len(merged) < 2:
+        return ["\n".join(parts)] if parts else merged
+
+    return merged
 
 # ---------------------- TIME HELPERS ----------------------
 def local_now() -> datetime:
